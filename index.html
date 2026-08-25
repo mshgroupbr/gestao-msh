@@ -398,6 +398,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
   </div>
 </div>
 
+<div class="screen" id="s-painel-vivo">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Painel ao vivo</h1><p id="painel-vivo-unit-sub"></p></div>
+  </div>
+  <div class="body">
+    <div id="painel-vivo-conteudo"></div>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -448,6 +458,7 @@ function goTo(id){
   if(id==='s-gerentes') renderGerentesScreen();
   if(id==='s-vendas-import') renderVendasImportScreen();
   if(id==='s-relatorios') renderRelatoriosScreen();
+  if(id==='s-painel-vivo') renderPainelVivoScreen();
 }
 function irLoginMaster(){
   document.getElementById('master-senha').value='';
@@ -546,6 +557,7 @@ function renderHome(){
         '<div class="admin-card" onclick="goTo(\'s-gerentes\')"><div class="admin-ico">👥</div><div class="admin-lb">Gerentes</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
       '</div>'+
       '<div class="quick-stat-grid">'+
         '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
@@ -558,6 +570,7 @@ function renderHome(){
       '<div class="welcome-txt">Olá, '+nome+'! 👋<br><span style="font-weight:400;font-size:13px;opacity:.65">'+unidade+'</span></div>'+
       '<div class="admin-grid">'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
       '</div>'+
       '<div class="quick-stat-grid">'+
         '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
@@ -1240,6 +1253,113 @@ function calcularESetarCmv(porItem, vendaLiquida){
     const sec=document.getElementById('cmv-section');
     if(sec) sec.innerHTML=html;
   });
+}
+
+/* ================= PAINEL AO VIVO (dados dos outros apps) ================= */
+const REQUISICOES_REF = db.ref('requisicoes');
+const PEDIDOS_REF = db.ref('pedidos');
+const INVENTARIO_REF = db.ref('inventario');
+const SETORES_POR_UNIDADE_INV = {
+  'Cali Cravings':['MASHA ADM','MASHA PIER','LINHA COZINHA & BAR','CALI CAFÉ','ENXOVAL'],
+  'Texas Country Bar':['TEXAS LINHA COZINHA & BAR','TEXAS BAR','TEXAS LIMPEZA']
+};
+function renderPainelVivoScreen(){
+  const perfil=sessionStorage.getItem('perfilAtivo');
+  if(perfil!=='master' && perfil!=='gerente'){ goTo('s-unidade'); return; }
+  const sub=document.getElementById('painel-vivo-unit-sub');
+  if(sub) sub.textContent=getUnidadeAtual();
+  carregarPainelVivo();
+}
+function tempoAberto(ts){
+  if(!ts) return '';
+  const min = Math.floor((Date.now()-ts)/60000);
+  if(min<60) return min+'min';
+  const h = Math.floor(min/60);
+  if(h<24) return h+'h'+(min%60?String(min%60).padStart(2,'0'):'');
+  const d = Math.floor(h/24);
+  return d+'d'+(h%24?(' '+h%24+'h'):'');
+}
+function carregarPainelVivo(){
+  const conteudo=document.getElementById('painel-vivo-conteudo');
+  if(!conteudo) return;
+  conteudo.innerHTML='<div class="empty-msg">Carregando...</div>';
+  const unidade=getUnidadeAtual();
+  Promise.all([
+    REQUISICOES_REF.once('value').then(s=>s.val()||{}),
+    PEDIDOS_REF.once('value').then(s=>s.val()||{}),
+    INVENTARIO_REF.once('value').then(s=>s.val()||{})
+  ]).then(([reqsObj,pedsObj,invObj])=>{
+    const reqsAbertas = Object.values(reqsObj)
+      .filter(r=>r && r.unidade===unidade && (r.status==='pending'||r.status==='sent'))
+      .sort((a,b)=>(a.ts||0)-(b.ts||0));
+    const pedsAbertos = Object.values(pedsObj)
+      .filter(p=>p && p.unidade===unidade && p.status==='pending')
+      .sort((a,b)=>(a.ts||0)-(b.ts||0));
+
+    // itens com saldo zero: pega a contagem finalizada mais recente por setor da unidade ativa
+    const setoresUnidade = SETORES_POR_UNIDADE_INV[unidade]||SETORES_POR_UNIDADE_INV['Cali Cravings'];
+    const maisRecentePorSetor = {};
+    Object.values(invObj).forEach(e=>{
+      if(!e || !e.setor || !setoresUnidade.includes(e.setor)) return;
+      if(!e.tsEnvio) return; // só conta contagens finalizadas/enviadas, não rascunhos
+      const atual = maisRecentePorSetor[e.setor];
+      if(!atual || (e.tsEnvio>atual.tsEnvio)) maisRecentePorSetor[e.setor]=e;
+    });
+    const zeradosPorSetor = Object.entries(maisRecentePorSetor).map(([setor,e])=>{
+      const itens = e.itens||{};
+      const zerados = Object.values(itens).filter(v=>Number(v)===0).length;
+      return { setor, zerados, data: e.data };
+    }).filter(x=>x.zerados>0);
+
+    renderPainelVivoConteudo(reqsAbertas, pedsAbertos, zeradosPorSetor, setoresUnidade.length - Object.keys(maisRecentePorSetor).length);
+  });
+}
+function renderPainelVivoConteudo(reqsAbertas, pedsAbertos, zeradosPorSetor, setoresSemContagem){
+  const conteudo=document.getElementById('painel-vivo-conteudo');
+  let html='';
+
+  html+='<div class="sec-l">🧾 Requisições em aberto ('+reqsAbertas.length+')</div>';
+  if(reqsAbertas.length===0){
+    html+='<div class="empty-msg">Nenhuma requisição em aberto.</div>';
+  } else {
+    reqsAbertas.forEach(r=>{
+      const nItens=(r.items||[]).length;
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+escapeHtml(r.setor||'—')+' · '+escapeHtml(r.origem||'—')+' → '+escapeHtml(r.destino||'—')+'</div></div></div>'+
+        '<div class="ri-cat">'+escapeHtml(r.nome||'—')+' · '+nItens+' item(ns) · em aberto há '+tempoAberto(r.ts)+'</div></div>';
+    });
+  }
+
+  html+='<div class="sec-l">🛒 Compras em aberto ('+pedsAbertos.length+')</div>';
+  if(pedsAbertos.length===0){
+    html+='<div class="empty-msg">Nenhum pedido de compra em aberto.</div>';
+  } else {
+    pedsAbertos.forEach(p=>{
+      const nItens=(p.items||[]).length;
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+escapeHtml(p.setor||'—')+'</div></div></div>'+
+        '<div class="ri-cat">'+escapeHtml(p.nome||'—')+' · '+nItens+' item(ns) · aguardando há '+tempoAberto(p.ts)+'</div></div>';
+    });
+  }
+
+  html+='<div class="sec-l">📦 Itens com saldo zero</div>';
+  if(zeradosPorSetor.length===0){
+    html+='<div class="empty-msg">Nenhum item zerado nas últimas contagens finalizadas.</div>';
+  } else {
+    zeradosPorSetor.forEach(z=>{
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+escapeHtml(z.setor)+'</div></div></div>'+
+        '<div class="badge br">🔴 '+z.zerados+' item(ns) zerado(s) — contagem de '+ptDateSimples(z.data)+'</div></div>';
+    });
+  }
+  if(setoresSemContagem>0){
+    html+='<div class="empty-msg">⚠️ '+setoresSemContagem+' setor(es) dessa unidade ainda não têm contagem finalizada no Inventário.</div>';
+  }
+  html+='<div class="empty-msg" style="margin-top:6px">Fonte: apps de Requisições, Compras e Inventário — dados ao vivo, sem precisar abrir cada app.</div>';
+
+  conteudo.innerHTML=html;
+}
+function ptDateSimples(d){
+  if(!d) return '—';
+  const p=String(d).split('-');
+  return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : d;
 }
 
 /* ================= HOME: QUICK STATS ================= */
