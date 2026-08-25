@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Masha Group — Gestão</title>
+<meta name="theme-color" content="#2C3E35">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gestão MSH">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="application-name" content="Gestão MSH">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192x192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512x512.png">
+<link rel="apple-touch-icon" href="./icon-192x192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js')
+      .then(()=>console.log('SW registrado'))
+      .catch(err=>console.log('SW erro:', err));
+  });
+}
+</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F0E8;--surf:#FDFAF5;--surf2:#EDE8DC;
+  --bdr:rgba(0,0,0,.10);--bdr2:rgba(0,0,0,.18);
+  --tx:#1a1a1a;--tx2:#666660;--tx3:#999993;
+  --or:#8B7355;--or-l:#f5f0e8;
+  --gr:#1d9e75;--gr-l:#e1f5ee;
+  --rd:#a32d2d;--rd-l:#fcebeb;
+  --am:#b5720b;--am-l:#faeeda;
+  --hd:#2C3E35;--r:14px;--rs:9px;
+  --cali:#1d9e75;--texas:#7A1F1F;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#111112;--surf:#1e1e20;--surf2:#2a2a2d;
+  --bdr:rgba(255,255,255,.08);--bdr2:rgba(255,255,255,.15);
+  --tx:#f0efe8;--tx2:#aaa9a0;--tx3:#666660;
+}}
+html,body{height:100%;background:var(--bg);font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--tx);-webkit-font-smoothing:antialiased}
+#app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+.screen{display:none;flex-direction:column;flex:1}
+.screen.active{display:flex}
+
+/* HEADER */
+.hdr{background:var(--hd);color:#fff;padding:16px 20px;padding-top:calc(16px + env(safe-area-inset-top));display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:20}
+body.tema-texas .hdr{background:var(--texas)}
+body.tema-cali .hdr{background:var(--hd)}
+.hico{width:38px;height:38px;border-radius:50%;background:var(--or);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;color:#fff}
+.htxt{min-width:0}
+.htxt h1{font-size:16px;font-weight:700}
+.htxt p{font-size:12px;opacity:.6;margin-top:1px}
+.back{background:rgba(255,255,255,.12);border:none;color:#fff;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.back:active{background:rgba(255,255,255,.25)}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.unit-badge{font-size:11px;font-weight:600;background:rgba(255,255,255,.16);padding:5px 10px;border-radius:20px;white-space:nowrap}
+.sair-link{background:none;border:none;color:#fff;opacity:.75;font-size:12px;font-family:inherit;cursor:pointer;text-decoration:underline;padding:2px}
+
+/* BODY */
+.body{flex:1;padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;padding-bottom:calc(32px + env(safe-area-inset-bottom))}
+.card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:14px 16px}
+
+/* UNIT SELECT SCREEN */
+.unit-select{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:30px;text-align:center}
+.brand-badge{width:64px;height:64px;border-radius:50%;background:var(--hd);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;letter-spacing:.02em}
+.unit-select h1{font-size:21px;font-weight:700;max-width:280px;line-height:1.3}
+.unit-cards{display:flex;flex-direction:column;gap:14px;width:100%;max-width:340px}
+.unit-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:18px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.unit-card:active{background:var(--surf2)}
+.unit-ico{width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.brand-badge-img{width:64px;height:64px;border-radius:50%;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.18)}
+.unit-card-lb{font-size:16px;font-weight:700;text-align:left}
+.unit-card-sub{font-size:12px;color:var(--tx2);text-align:left;margin-top:2px}
+
+/* PROFILE / LOGIN SCREENS */
+.profile-body{flex:1;padding:24px 20px;display:flex;flex-direction:column;gap:16px;justify-content:center}
+.profile-body h2{font-size:19px;font-weight:700;margin-bottom:4px;text-align:center}
+.profile-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:20px;display:flex;align-items:center;gap:14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.profile-card:active{background:var(--surf2)}
+.profile-card .p-ico{width:44px;height:44px;border-radius:50%;background:var(--or-l);color:var(--or);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.profile-card .p-lb{font-size:15px;font-weight:700}
+.profile-card .p-sub{font-size:12px;color:var(--tx2);margin-top:2px}
+.back-link{background:none;border:none;color:var(--tx2);font-size:13px;font-family:inherit;cursor:pointer;text-decoration:underline;align-self:center;margin-top:4px}
+
+/* FORM FIELDS */
+.fl{font-size:12px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;display:block}
+input,select,textarea{width:100%;background:var(--surf2);border:.5px solid var(--bdr);border-radius:var(--rs);padding:12px 13px;font-size:15px;font-family:inherit;color:var(--tx);outline:none;-webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 3px rgba(139,115,85,.15);background:var(--surf)}
+.field{margin-bottom:14px}
+.err-txt{color:var(--rd);font-size:13px;margin-top:8px;min-height:16px}
+.empty-msg{text-align:center;padding:20px 10px;color:var(--tx2);font-size:13.5px;line-height:1.5;background:var(--surf2);border-radius:var(--rs)}
+
+/* BUTTONS */
+.btn-or{background:var(--or);color:#fff;border:none;border-radius:var(--r);padding:15px;font-size:15px;font-weight:700;width:100%;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;-webkit-tap-highlight-color:transparent}
+.btn-or:active{opacity:.85}
+.btn-sec{background:none;border:.5px solid var(--bdr2);border-radius:var(--r);padding:13px;font-size:14px;color:var(--tx2);cursor:pointer;width:100%;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.btn-sec:active{background:var(--surf2)}
+.btn-sm{background:none;border:.5px solid var(--bdr2);border-radius:8px;padding:8px 12px;font-size:12.5px;color:var(--tx2);cursor:pointer;font-family:inherit;font-weight:600;-webkit-tap-highlight-color:transparent}
+.btn-sm.danger{border-color:var(--rd);color:var(--rd)}
+.btn-sm.danger:active{background:var(--rd-l)}
+.btn-sm:active{background:var(--surf2)}
+
+/* HOME / ADMIN GRID */
+.welcome-txt{font-size:16px;font-weight:700;line-height:1.4;padding:2px 2px 4px}
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.admin-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:20px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;position:relative;min-height:104px}
+.admin-card:active{background:var(--surf2)}
+.admin-card.disabled{opacity:.5;cursor:not-allowed;pointer-events:none;background:var(--surf2)}
+.admin-ico{font-size:26px}
+.admin-lb{font-size:13.5px;font-weight:700}
+.soon-badge{position:absolute;top:8px;right:8px;font-size:9.5px;font-weight:700;background:var(--tx3);color:#fff;padding:3px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.03em}
+
+/* SEARCH */
+.search-wrap{position:relative}
+.search-wrap input{padding-left:36px}
+.search-ic{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--tx3);pointer-events:none}
+
+/* LISTS */
+.sec-l{font-size:11px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;margin-top:6px}
+.ri{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:13px 14px;margin-bottom:8px}
+.ri-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.ri-name{font-size:14.5px;font-weight:700;line-height:1.3}
+.ri-cat{font-size:11.5px;color:var(--tx2);margin-top:2px}
+.ri-costs{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap}
+.ri-cost-block{min-width:90px}
+.ri-cost-l{font-size:10.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.ri-cost-v{font-size:15px;font-weight:700}
+.ri-cost-v.editable{cursor:pointer;border-bottom:1px dashed var(--bdr2);display:inline-flex;align-items:center;gap:5px}
+.ri-cost-v.editable:active{opacity:.7}
+.edit-pencil{font-size:11px;opacity:.55}
+.ri-edit-input{width:90px;padding:8px 9px;font-size:14px}
+.badge{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;flex-shrink:0;white-space:nowrap;display:inline-block;margin-top:8px}
+.ba{background:var(--am-l);color:var(--am)}
+.br{background:var(--rd-l);color:var(--rd)}
+
+/* GERENTES */
+.ger-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
+.ger-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ger-nome{font-size:14.5px;font-weight:700}
+.ger-unidade{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--surf2);color:var(--tx2)}
+.ger-unidade.cali{background:#e1f5ee;color:#0f6e56}
+.ger-unidade.texas{background:#fbe6e6;color:#7A1F1F}
+.ger-senha-row{font-size:12.5px;color:var(--tx2);margin-top:6px}
+.ger-actions{display:flex;gap:8px;margin-top:10px}
+.ger-actions .btn-sm{flex:1}
+
+/* TOAST */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a1a1a;color:#fff;padding:12px 20px;border-radius:30px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;z-index:100;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+<!-- 1. UNIDADE -->
+<div class="screen active" id="s-unidade">
+  <div class="unit-select">
+    <img src="msh-logo.png" alt="Masha Group" class="brand-badge-img">
+    <h1>Para onde você quer gerenciar?</h1>
+    <div class="unit-cards">
+      <div class="unit-card" onclick="escolherUnidade('Cali Cravings')">
+        <img src="icon-cali.png" alt="Cali Cravings" class="unit-ico">
+        <div>
+          <div class="unit-card-lb">Cali Cravings</div>
+          <div class="unit-card-sub">Gestão da unidade</div>
+        </div>
+      </div>
+      <div class="unit-card" onclick="escolherUnidade('Texas Country Bar')">
+        <img src="icon-texas.png" alt="Texas Country Bar" class="unit-ico">
+        <div>
+          <div class="unit-card-lb">Texas Country Bar</div>
+          <div class="unit-card-sub">Gestão da unidade</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. PERFIL -->
+<div class="screen" id="s-perfil">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-unidade')">‹</button>
+    <div class="htxt"><h1>Masha Group</h1><p>Gestão</p></div>
+    <div class="hdr-right"><span class="unit-badge" id="perfil-unit-badge"></span></div>
+  </div>
+  <div class="profile-body">
+    <h2>Qual seu acesso?</h2>
+    <div class="profile-card" onclick="irLoginMaster()">
+      <div class="p-ico">👑</div>
+      <div><div class="p-lb">Gestão Master</div><div class="p-sub">Acesso total, todas as unidades</div></div>
+    </div>
+    <div class="profile-card" onclick="irLoginGerente()">
+      <div class="p-ico">🏪</div>
+      <div><div class="p-lb">Gerência da unidade</div><div class="p-sub">Acesso restrito à unidade escolhida</div></div>
+    </div>
+    <button class="back-link" onclick="goTo('s-unidade')">‹ Trocar unidade</button>
+  </div>
+</div>
+
+<!-- 3. LOGIN MASTER -->
+<div class="screen" id="s-login-master">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-perfil')">‹</button>
+    <div class="htxt"><h1>Gestão Master</h1><p>Acesso restrito</p></div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="field">
+        <label class="fl">Senha master</label>
+        <input type="password" id="master-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')loginMaster()">
+      </div>
+      <button class="btn-or" onclick="loginMaster()">Entrar</button>
+      <div class="err-txt" id="login-master-erro"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 4. LOGIN GERENTE -->
+<div class="screen" id="s-login-gerente">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-perfil')">‹</button>
+    <div class="htxt"><h1>Gerência da unidade</h1><p id="login-gerente-unit-sub"></p></div>
+  </div>
+  <div class="body">
+    <div class="card" id="login-gerente-form">
+      <div class="field">
+        <label class="fl">Gerente</label>
+        <select id="ger-nome"></select>
+      </div>
+      <div class="field">
+        <label class="fl">Senha</label>
+        <input type="password" id="ger-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')loginGerente()">
+      </div>
+      <button class="btn-or" onclick="loginGerente()">Entrar</button>
+      <div class="err-txt" id="login-gerente-erro"></div>
+    </div>
+    <div class="card" id="login-gerente-empty" style="display:none">
+      <div class="empty-msg">Nenhum gerente cadastrado para esta unidade ainda — peça para o Gestão Master cadastrar.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. HOME -->
+<div class="screen" id="s-home">
+  <div class="hdr">
+    <div class="hico">MG</div>
+    <div class="htxt"><h1>Masha Group</h1><p>Gestão</p></div>
+    <div class="hdr-right">
+      <span class="unit-badge" id="home-unidade-badge"></span>
+      <button class="sair-link" onclick="sair()">Sair</button>
+    </div>
+  </div>
+  <div class="body" id="home-body"></div>
+</div>
+
+<!-- 6. CUSTOS (master only) -->
+<div class="screen" id="s-custos">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Custos</h1><p>Fichas técnicas &amp; Allfood</p></div>
+  </div>
+  <div class="body">
+    <div class="search-wrap">
+      <span class="search-ic">🔎</span>
+      <input type="text" id="custos-search" placeholder="Buscar por nome..." oninput="drawCustosList()">
+    </div>
+    <div id="custos-list"></div>
+  </div>
+</div>
+
+<!-- 7. GERENTES (master only) -->
+<div class="screen" id="s-gerentes">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Gerentes</h1><p>Acessos por unidade</p></div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="field">
+        <label class="fl">Nome</label>
+        <input type="text" id="ger-form-nome" placeholder="Nome do gerente">
+      </div>
+      <div class="field">
+        <label class="fl">Unidade</label>
+        <select id="ger-form-unidade">
+          <option value="Cali Cravings">Cali Cravings</option>
+          <option value="Texas Country Bar">Texas Country Bar</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="fl">Senha</label>
+        <input type="text" id="ger-form-senha" placeholder="Senha de acesso">
+      </div>
+      <button class="btn-or" onclick="adicionarGerente()">＋ Adicionar gerente</button>
+    </div>
+    <div class="field" style="margin:2px 0 0">
+      <label class="fl">Filtrar por unidade</label>
+      <select id="ger-filter" onchange="drawGerentesList()">
+        <option value="todas">Todas as unidades</option>
+        <option value="Cali Cravings">Cali Cravings</option>
+        <option value="Texas Country Bar">Texas Country Bar</option>
+      </select>
+    </div>
+    <div id="gerentes-list"></div>
+  </div>
+</div>
+
+</div>
+
+<div id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
+/* ================= FIREBASE ================= */
+firebase.initializeApp({
+  apiKey:"AIzaSyDbdgaIEoKn39cjju2IVP83DdP3c1Og6Oo",
+  authDomain:"cozinha-pro-194a7.firebaseapp.com",
+  databaseURL:"https://cozinha-pro-194a7-default-rtdb.firebaseio.com",
+  projectId:"cozinha-pro-194a7"
+});
+const db = firebase.database();
+const CUSTOS_REF = db.ref('gestao_custos');
+const GERENTES_REF = db.ref('gestao_gerentes');
+
+/* ================= UNIDADE ================= */
+function getUnidadeAtual(){ return localStorage.getItem('unidadeAtivaGestao')||'Cali Cravings'; }
+function salvarUnidadeAtiva(u){ localStorage.setItem('unidadeAtivaGestao',u); aplicarTemaUnidade(); }
+function aplicarTemaUnidade(){
+  const u=getUnidadeAtual();
+  document.body.classList.toggle('tema-texas', u==='Texas Country Bar');
+  document.body.classList.toggle('tema-cali', u!=='Texas Country Bar');
+}
+function escolherUnidade(u){
+  salvarUnidadeAtiva(u);
+  aplicarTemaUnidade();
+  const badge=document.getElementById('perfil-unit-badge');
+  if(badge) badge.textContent=u;
+  goTo('s-perfil');
+}
+
+/* ================= NAV ================= */
+function goTo(id){
+  // defensive: master-only screens can never render for a non-master session
+  if((id==='s-custos'||id==='s-gerentes') && sessionStorage.getItem('perfilAtivo')!=='master'){
+    id='s-home';
+  }
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+  if(id==='s-perfil'){ const b=document.getElementById('perfil-unit-badge'); if(b) b.textContent=getUnidadeAtual(); }
+  if(id==='s-login-gerente') popularGerentes();
+  if(id==='s-home') renderHome();
+  if(id==='s-custos') renderCustosScreen();
+  if(id==='s-gerentes') renderGerentesScreen();
+}
+function irLoginMaster(){
+  document.getElementById('master-senha').value='';
+  document.getElementById('login-master-erro').textContent='';
+  goTo('s-login-master');
+}
+function irLoginGerente(){
+  goTo('s-login-gerente');
+}
+function sair(){
+  sessionStorage.removeItem('perfilAtivo');
+  sessionStorage.removeItem('gerenteNome');
+  goTo('s-unidade');
+}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+/* ================= LOGIN MASTER ================= */
+const MASTER_SENHA = 'MSH-2026-Master';
+function loginMaster(){
+  const senha=document.getElementById('master-senha').value;
+  const erro=document.getElementById('login-master-erro');
+  if(senha===MASTER_SENHA){
+    sessionStorage.setItem('perfilAtivo','master');
+    erro.textContent='';
+    goTo('s-home');
+  } else {
+    erro.textContent='Senha incorreta. Tente novamente.';
+  }
+}
+
+/* ================= LOGIN GERENTE ================= */
+function popularGerentes(){
+  const sel=document.getElementById('ger-nome');
+  const formWrap=document.getElementById('login-gerente-form');
+  const emptyWrap=document.getElementById('login-gerente-empty');
+  const sub=document.getElementById('login-gerente-unit-sub');
+  const erro=document.getElementById('login-gerente-erro');
+  const unidadeAtiva=getUnidadeAtual();
+  if(sub) sub.textContent=unidadeAtiva;
+  if(erro) erro.textContent='';
+  document.getElementById('ger-senha').value='';
+  sel.innerHTML='<option>Carregando...</option>';
+  GERENTES_REF.once('value').then(snap=>{
+    const all=snap.val()||{};
+    const filtrados=Object.entries(all).filter(([k,v])=>v && v.unidade===unidadeAtiva);
+    sel.innerHTML='';
+    if(filtrados.length===0){
+      formWrap.style.display='none';
+      emptyWrap.style.display='block';
+    } else {
+      formWrap.style.display='block';
+      emptyWrap.style.display='none';
+      filtrados.forEach(([k,v])=>{
+        const o=document.createElement('option');
+        o.value=k; o.textContent=v.nome;
+        sel.appendChild(o);
+      });
+    }
+  });
+}
+function loginGerente(){
+  const sel=document.getElementById('ger-nome');
+  const key=sel.value;
+  const senha=document.getElementById('ger-senha').value;
+  const erro=document.getElementById('login-gerente-erro');
+  if(!key){ erro.textContent='Selecione um gerente.'; return; }
+  GERENTES_REF.child(key).once('value').then(snap=>{
+    const g=snap.val();
+    if(g && g.senha===senha){
+      sessionStorage.setItem('perfilAtivo','gerente');
+      sessionStorage.setItem('gerenteNome', g.nome);
+      erro.textContent='';
+      goTo('s-home');
+    } else {
+      erro.textContent='Senha incorreta. Tente novamente.';
+    }
+  });
+}
+
+/* ================= HOME ================= */
+function renderHome(){
+  const perfil=sessionStorage.getItem('perfilAtivo');
+  const unidade=getUnidadeAtual();
+  const badge=document.getElementById('home-unidade-badge');
+  if(badge) badge.textContent=unidade;
+  const body=document.getElementById('home-body');
+  if(perfil==='master'){
+    body.innerHTML=
+      '<div class="welcome-txt">Gestão Master — '+unidade+'</div>'+
+      '<div class="admin-grid">'+
+        '<div class="admin-card" onclick="goTo(\'s-custos\')"><div class="admin-ico">💰</div><div class="admin-lb">Custos</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-gerentes\')"><div class="admin-ico">👥</div><div class="admin-lb">Gerentes</div></div>'+
+        '<div class="admin-card disabled"><span class="soon-badge">em breve</span><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
+        '<div class="admin-card disabled"><span class="soon-badge">em breve</span><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
+      '</div>';
+  } else if(perfil==='gerente'){
+    const nome=sessionStorage.getItem('gerenteNome')||'Gerente';
+    body.innerHTML=
+      '<div class="welcome-txt">Olá, '+nome+'! 👋<br><span style="font-weight:400;font-size:13px;opacity:.65">'+unidade+'</span></div>'+
+      '<div class="admin-grid">'+
+        '<div class="admin-card disabled"><span class="soon-badge">em breve</span><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
+        '<div class="admin-card disabled"><span class="soon-badge">em breve</span><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
+      '</div>';
+  } else {
+    // no valid session — force back through the access flow
+    goTo('s-unidade');
+  }
+}
+
+/* ================= SLUGIFY ================= */
+function slugify(s){
+  return (s||'').toString()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g,'_')
+    .replace(/[^a-z0-9_]/g,'');
+}
+
+/* ================= SEED DATA (Custos) ================= */
+const SEED_CUSTOS = [
+  {"nome":"Guacamole e Chips","categoria":"Entradas jantar e almoço","custo_ficha_tecnica":6.19,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Ceviche de Salmão e Atum","categoria":"Entradas jantar e almoço","custo_ficha_tecnica":20.37,"custo_allfood":81.1,"divergencia_pct":298.1,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Ostras frescas com Vinagrete de Pupunha","categoria":"Entradas jantar e almoço","custo_ficha_tecnica":21.32,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Tostadas de Camarão e Avocado","categoria":"Entradas jantar e almoço","custo_ficha_tecnica":22.85,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Tartar de Atum","categoria":"Entradas jantar e almoço","custo_ficha_tecnica":15.41,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Fish tacos Cali style","categoria":"Pratos Principais","custo_ficha_tecnica":14.12,"custo_allfood":21.14,"divergencia_pct":49.7,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Robalo ao molho de coco","categoria":"Pratos Principais","custo_ficha_tecnica":33.64,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Filé mignon ao demi-Glace","categoria":"Pratos Principais","custo_ficha_tecnica":31.92,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Mac e Cheese trufado","categoria":"Pratos Principais","custo_ficha_tecnica":14.86,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Caesar Salada Clássica","categoria":"Saladas","custo_ficha_tecnica":5.59,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Cobb salad","categoria":"Saladas","custo_ficha_tecnica":9.1,"custo_allfood":7.93,"divergencia_pct":-12.9,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Pão de queijo tradicional","categoria":"Café da manhã","custo_ficha_tecnica":0,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":true},
+  {"nome":"Fudge de chocolate belga","categoria":"Sobremesas","custo_ficha_tecnica":11.04,"custo_allfood":50.83,"divergencia_pct":360.4,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Brownie a lá mode","categoria":"Sobremesas","custo_ficha_tecnica":9.7,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Entremet de chocolate branco","categoria":"Sobremesas","custo_ficha_tecnica":17.78,"custo_allfood":17.04,"divergencia_pct":-4.2,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Calimissu","categoria":"Sobremesas","custo_ficha_tecnica":9.51,"custo_allfood":37.36,"divergencia_pct":292.8,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Cannoli de laranja com amendoas","categoria":"Sobremesas","custo_ficha_tecnica":10.02,"custo_allfood":5.64,"divergencia_pct":-43.7,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Waffle de frutas vermelhas","categoria":"Sobremesas","custo_ficha_tecnica":3.53,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Waffle banoffee","categoria":"Sobremesas","custo_ficha_tecnica":3.39,"custo_allfood":8.06,"divergencia_pct":137.8,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Waffle tropical","categoria":"Sobremesas","custo_ficha_tecnica":3.9,"custo_allfood":5.23,"divergencia_pct":34.1,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"Cheesecake de paçoca","categoria":"Sobremesas","custo_ficha_tecnica":8.89,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Croquetas de pernil","categoria":"festival de inverno","custo_ficha_tecnica":2.65,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Bruschetta caprese","categoria":"festival de inverno","custo_ficha_tecnica":4.94,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Fettuccine ao molho 3 queijos","categoria":"festival de inverno","custo_ficha_tecnica":15.56,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Fettuccine ao molho pomodoro e burrata","categoria":"festival de inverno","custo_ficha_tecnica":6.48,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Fettuccine ao ragu de brisket","categoria":"festival de inverno","custo_ficha_tecnica":11.75,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Risoto ao mix de cogumelos","categoria":"festival de inverno","custo_ficha_tecnica":5.62,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Risoto de abobora e camarão","categoria":"festival de inverno","custo_ficha_tecnica":27.94,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Risoto de pera com nozes","categoria":"festival de inverno","custo_ficha_tecnica":6.97,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Mousse de chocolate e crumble","categoria":"festival de inverno","custo_ficha_tecnica":7.59,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Panacota com geleia de damasco","categoria":"festival de inverno","custo_ficha_tecnica":3.91,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Risoto de blumenau com alho poró","categoria":"festival de inverno","custo_ficha_tecnica":5.76,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Polenta com creme de queijo","categoria":"festival de inverno","custo_ficha_tecnica":2.64,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Salmão com risoto de limão","categoria":"festival de inverno","custo_ficha_tecnica":21.3,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Nhoque ao molho alfredo","categoria":"festival de inverno","custo_ficha_tecnica":23.75,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Picanha grelhada ao molho mostarda","categoria":"festival de inverno","custo_ficha_tecnica":22.15,"custo_allfood":0,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Torta de limão","categoria":"festival de inverno","custo_ficha_tecnica":4.72,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Ravioli de queijo ao pomodoro","categoria":"pratos ifood","custo_ficha_tecnica":25.17,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Galeto de frango com fettuccine","categoria":"pratos ifood","custo_ficha_tecnica":11.98,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Ribeye com gnocchi","categoria":"pratos ifood","custo_ficha_tecnica":33.22,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Mignon ao molho mostarda","categoria":"pratos ifood","custo_ficha_tecnica":32.03,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Risoto ao limone com camarão","categoria":"pratos ifood","custo_ficha_tecnica":30.27,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Parmegiana de mignon com fettuccine","categoria":"pratos ifood","custo_ficha_tecnica":26.18,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Parmegiana de frango","categoria":"pratos ifood","custo_ficha_tecnica":14.91,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Strogonoff de carne","categoria":"pratos ifood","custo_ficha_tecnica":19.08,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"Strogonoff de frango","categoria":"pratos ifood","custo_ficha_tecnica":7.82,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"XAROPE DE AÇÚCAR (1L)","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":true},
+  {"nome":"HONEY MOON","categoria":"Bar","custo_ficha_tecnica":14.44,"custo_allfood":12.47,"divergencia_pct":-13.6,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"SANTA MÔNICA","categoria":"Bar","custo_ficha_tecnica":4.65,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"DIVA DRINK","categoria":"Bar","custo_ficha_tecnica":9.52,"custo_allfood":10.27,"divergencia_pct":7.9,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"CALI PASSION","categoria":"Bar","custo_ficha_tecnica":3.21,"custo_allfood":7.87,"divergencia_pct":145.2,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"SAL DO ORIENTE","categoria":"Bar","custo_ficha_tecnica":9.94,"custo_allfood":1.52,"divergencia_pct":-84.7,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"CITRUS SPARKLER","categoria":"Bar","custo_ficha_tecnica":4.52,"custo_allfood":7.17,"divergencia_pct":58.6,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"CALI MARTINI","categoria":"Bar","custo_ficha_tecnica":14.27,"custo_allfood":14.32,"divergencia_pct":0.4,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"SUN LIGHT BAY","categoria":"Bar","custo_ficha_tecnica":8.79,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"CHILCANO DE PISCO","categoria":"Bar","custo_ficha_tecnica":7.44,"custo_allfood":11.39,"divergencia_pct":53.1,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"PISCO PUNCH REPETIDO","categoria":"Bar","custo_ficha_tecnica":7.44,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"BLUE MOON","categoria":"Bar","custo_ficha_tecnica":5.8,"custo_allfood":11.85,"divergencia_pct":104.3,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"SMOKE PINEAPPLE","categoria":"Bar","custo_ficha_tecnica":13.88,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"OCEAN SIDE","categoria":"Bar","custo_ficha_tecnica":11.86,"custo_allfood":10.17,"divergencia_pct":-14.2,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"COCONOUT BOULEVARDIER","categoria":"Bar","custo_ficha_tecnica":9.43,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"FITZGERALD","categoria":"Bar","custo_ficha_tecnica":1.77,"custo_allfood":7.57,"divergencia_pct":327.7,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"JUNGLE BIRD","categoria":"Bar","custo_ficha_tecnica":8.9,"custo_allfood":9.79,"divergencia_pct":10.0,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"GREEN APPLE VANILLA","categoria":"Bar","custo_ficha_tecnica":11.93,"custo_allfood":10.13,"divergencia_pct":-15.1,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"MACUNAIMA","categoria":"Bar","custo_ficha_tecnica":5.35,"custo_allfood":4.52,"divergencia_pct":-15.5,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"GINGER FIZZ","categoria":"Bar","custo_ficha_tecnica":13.03,"custo_allfood":12.23,"divergencia_pct":-6.1,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"GOLDEN SUN","categoria":"Bar","custo_ficha_tecnica":19.31,"custo_allfood":17.49,"divergencia_pct":-9.4,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"PINEAAPLE JAGER","categoria":"Bar","custo_ficha_tecnica":11.84,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"ESPRESSO JAGER MARTINI","categoria":"Bar","custo_ficha_tecnica":9.83,"custo_allfood":9.45,"divergencia_pct":-3.9,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"JAGER FIZZ","categoria":"Bar","custo_ficha_tecnica":10.98,"custo_allfood":8.67,"divergencia_pct":-21.0,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"JAGER BOMB","categoria":"Bar","custo_ficha_tecnica":14.88,"custo_allfood":0.45,"divergencia_pct":-97.0,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"CARAJILLO","categoria":"Bar","custo_ficha_tecnica":13.89,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"SEX ON THE BEACH","categoria":"Bar","custo_ficha_tecnica":7.99,"custo_allfood":7.63,"divergencia_pct":-4.5,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"TOMMYS MARGARITA","categoria":"Bar","custo_ficha_tecnica":16.68,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"QUEENS PARK SWIZZLE","categoria":"Bar","custo_ficha_tecnica":5.05,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"TEQUILA SUNRISE","categoria":"Bar","custo_ficha_tecnica":15.05,"custo_allfood":11.07,"divergencia_pct":-26.4,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"PISCO SOUR","categoria":"Bar","custo_ficha_tecnica":8.3,"custo_allfood":8.89,"divergencia_pct":7.1,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"NEGRONI","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":true},
+  {"nome":"OLD FASHION","categoria":"Bar","custo_ficha_tecnica":7.37,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"MANHATTAN CLASSIC","categoria":"Bar","custo_ficha_tecnica":11.34,"custo_allfood":13.73,"divergencia_pct":21.1,"alerta_divergencia":true,"sem_custo":false},
+  {"nome":"COSMOPOLITAN","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":7.72,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"MARGARITA","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":true},
+  {"nome":"APEROL SPRITZ","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":20.95,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false},
+  {"nome":"GIN TÔNICA","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":null,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":true},
+  {"nome":"ESPRESSO MARTINI","categoria":"Bar","custo_ficha_tecnica":0,"custo_allfood":12.06,"divergencia_pct":null,"alerta_divergencia":false,"sem_custo":false}
+];
+
+function seedCustosIfNeeded(cb){
+  CUSTOS_REF.once('value').then(snap=>{
+    if(snap.exists()){ cb(); return; }
+    const obj={};
+    const used={};
+    SEED_CUSTOS.forEach(item=>{
+      let key=slugify(item.nome)||('item_'+Math.random().toString(36).slice(2,8));
+      while(used[key]) key=key+'_2';
+      used[key]=true;
+      obj[key]=item;
+    });
+    CUSTOS_REF.set(obj).then(cb).catch(cb);
+  });
+}
+
+/* ================= CUSTOS SCREEN ================= */
+let custosCache={};
+let custosListenerOn=false;
+function renderCustosScreen(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
+  seedCustosIfNeeded(()=>{
+    if(!custosListenerOn){
+      custosListenerOn=true;
+      CUSTOS_REF.on('value', snap=>{
+        custosCache=snap.val()||{};
+        drawCustosList();
+      });
+    } else {
+      drawCustosList();
+    }
+  });
+}
+function fmtMoney(v){
+  if(v===null||v===undefined) return '—';
+  return 'R$ '+Number(v).toFixed(2).replace('.',',');
+}
+function drawCustosList(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master') return;
+  const searchEl=document.getElementById('custos-search');
+  const q=(searchEl&&searchEl.value||'').toLowerCase().trim();
+  const list=document.getElementById('custos-list');
+  const entries=Object.entries(custosCache).filter(([k,v])=>v && (!q || (v.nome||'').toLowerCase().includes(q)));
+  if(entries.length===0){
+    list.innerHTML='<div class="empty-msg">Nenhum item encontrado.</div>';
+    return;
+  }
+  const grupos={};
+  entries.forEach(([k,v])=>{
+    const cat=v.categoria||'Sem categoria';
+    if(!grupos[cat]) grupos[cat]=[];
+    grupos[cat].push([k,v]);
+  });
+  const catsOrdenadas=Object.keys(grupos).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  let html='';
+  catsOrdenadas.forEach(cat=>{
+    html+='<div class="sec-l">'+cat+'</div>';
+    grupos[cat].sort((a,b)=>(a[1].nome||'').localeCompare(b[1].nome||'','pt-BR')).forEach(([k,v])=>{
+      let badge='';
+      if(v.sem_custo){
+        badge='<div class="badge br">🔴 Sem custo cadastrado</div>';
+      } else if(v.alerta_divergencia){
+        const pct=v.divergencia_pct;
+        const sinal=pct>0?'+':'';
+        badge='<div class="badge ba">⚠️ Divergência: '+sinal+(pct!=null?pct.toFixed(1):'?')+'%</div>';
+      }
+      html+='<div class="ri">'+
+        '<div class="ri-top"><div><div class="ri-name">'+escapeHtml(v.nome)+'</div></div></div>'+
+        '<div class="ri-costs">'+
+          '<div class="ri-cost-block">'+
+            '<div class="ri-cost-l">Ficha técnica</div>'+
+            '<div class="ri-cost-v editable" id="cv-'+k+'" onclick="editarCustoFicha(\''+k+'\')">'+fmtMoney(v.custo_ficha_tecnica)+' <span class="edit-pencil">✏️</span></div>'+
+          '</div>'+
+          (v.custo_allfood!=null?'<div class="ri-cost-block"><div class="ri-cost-l">Allfood</div><div class="ri-cost-v">'+fmtMoney(v.custo_allfood)+'</div></div>':'')+
+        '</div>'+
+        badge+
+      '</div>';
+    });
+  });
+  list.innerHTML=html;
+}
+function escapeHtml(s){
+  return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function editarCustoFicha(key){
+  const item=custosCache[key];
+  if(!item) return;
+  const cell=document.getElementById('cv-'+key);
+  if(!cell) return;
+  const atual=item.custo_ficha_tecnica||0;
+  cell.innerHTML='<input type="number" step="0.01" class="ri-edit-input" id="input-'+key+'" value="'+atual+'">';
+  const input=document.getElementById('input-'+key);
+  input.focus();
+  input.select();
+  function salvar(){
+    const novo=parseFloat(input.value);
+    salvarCustoFicha(key, isNaN(novo)?0:novo);
+  }
+  input.addEventListener('blur', salvar);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ input.blur(); } });
+}
+function salvarCustoFicha(key, novoValor){
+  const item=custosCache[key];
+  if(!item) return;
+  item.custo_ficha_tecnica=novoValor;
+  if(item.custo_allfood!=null && novoValor>0){
+    const pct=(item.custo_allfood-novoValor)/novoValor*100;
+    item.divergencia_pct=Math.round(pct*10)/10;
+    item.alerta_divergencia=Math.abs(pct)>10;
+  } else {
+    item.divergencia_pct=null;
+    item.alerta_divergencia=false;
+  }
+  item.sem_custo=!(novoValor>0);
+  CUSTOS_REF.child(key).update({
+    custo_ficha_tecnica:item.custo_ficha_tecnica,
+    divergencia_pct:item.divergencia_pct,
+    alerta_divergencia:item.alerta_divergencia,
+    sem_custo:item.sem_custo
+  });
+  toast('Custo atualizado ✓');
+  drawCustosList();
+}
+
+/* ================= GERENTES SCREEN ================= */
+let gerentesCache={};
+let gerentesListenerOn=false;
+let editingGerenteKey=null;
+function renderGerentesScreen(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
+  if(!gerentesListenerOn){
+    gerentesListenerOn=true;
+    GERENTES_REF.on('value', snap=>{
+      gerentesCache=snap.val()||{};
+      drawGerentesList();
+    });
+  } else {
+    drawGerentesList();
+  }
+}
+function adicionarGerente(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master') return;
+  const nome=document.getElementById('ger-form-nome').value.trim();
+  const unidade=document.getElementById('ger-form-unidade').value;
+  const senha=document.getElementById('ger-form-senha').value;
+  if(!nome||!senha){ toast('Preencha nome e senha'); return; }
+  GERENTES_REF.push({nome,unidade,senha});
+  document.getElementById('ger-form-nome').value='';
+  document.getElementById('ger-form-senha').value='';
+  toast('Gerente adicionado ✓');
+}
+function drawGerentesList(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master') return;
+  const filtroEl=document.getElementById('ger-filter');
+  const filtro=filtroEl?filtroEl.value:'todas';
+  const list=document.getElementById('gerentes-list');
+  const entries=Object.entries(gerentesCache).filter(([k,v])=>v && (filtro==='todas'||v.unidade===filtro));
+  if(entries.length===0){
+    list.innerHTML='<div class="empty-msg">Nenhum gerente cadastrado.</div>';
+    return;
+  }
+  entries.sort((a,b)=>(a[1].nome||'').localeCompare(b[1].nome||'','pt-BR'));
+  let html='';
+  entries.forEach(([k,v])=>{
+    const unidadeClass=v.unidade==='Cali Cravings'?'cali':(v.unidade==='Texas Country Bar'?'texas':'');
+    if(editingGerenteKey===k){
+      html+='<div class="ger-card">'+
+        '<div class="field"><label class="fl">Nome</label><input type="text" id="edit-nome-'+k+'" value="'+escapeHtml(v.nome)+'"></div>'+
+        '<div class="field"><label class="fl">Unidade</label><select id="edit-unidade-'+k+'">'+
+          '<option value="Cali Cravings"'+(v.unidade==='Cali Cravings'?' selected':'')+'>Cali Cravings</option>'+
+          '<option value="Texas Country Bar"'+(v.unidade==='Texas Country Bar'?' selected':'')+'>Texas Country Bar</option>'+
+        '</select></div>'+
+        '<div class="field"><label class="fl">Senha</label><input type="text" id="edit-senha-'+k+'" value="'+escapeHtml(v.senha)+'"></div>'+
+        '<div class="ger-actions">'+
+          '<button class="btn-sm" onclick="salvarEdicaoGerente(\''+k+'\')">Salvar</button>'+
+          '<button class="btn-sm" onclick="cancelarEdicaoGerente()">Cancelar</button>'+
+        '</div>'+
+      '</div>';
+    } else {
+      html+='<div class="ger-card">'+
+        '<div class="ger-top"><div class="ger-nome">'+escapeHtml(v.nome)+'</div><div class="ger-unidade '+unidadeClass+'">'+escapeHtml(v.unidade)+'</div></div>'+
+        '<div class="ger-senha-row">Senha: '+escapeHtml(v.senha)+'</div>'+
+        '<div class="ger-actions">'+
+          '<button class="btn-sm" onclick="editarGerente(\''+k+'\')">✏️ Editar</button>'+
+          '<button class="btn-sm danger" onclick="excluirGerente(\''+k+'\')">🗑️ Excluir</button>'+
+        '</div>'+
+      '</div>';
+    }
+  });
+  list.innerHTML=html;
+}
+function editarGerente(key){
+  editingGerenteKey=key;
+  drawGerentesList();
+}
+function cancelarEdicaoGerente(){
+  editingGerenteKey=null;
+  drawGerentesList();
+}
+function salvarEdicaoGerente(key){
+  const nome=document.getElementById('edit-nome-'+key).value.trim();
+  const unidade=document.getElementById('edit-unidade-'+key).value;
+  const senha=document.getElementById('edit-senha-'+key).value;
+  if(!nome||!senha){ toast('Preencha nome e senha'); return; }
+  GERENTES_REF.child(key).update({nome,unidade,senha}).then(()=>{
+    editingGerenteKey=null;
+    toast('Gerente atualizado ✓');
+  });
+}
+function excluirGerente(key){
+  if(!confirm('Excluir este gerente?')) return;
+  GERENTES_REF.child(key).remove().then(()=>toast('Gerente excluído ✓'));
+}
+
+/* ================= INIT ================= */
+document.addEventListener('DOMContentLoaded', ()=>{
+  aplicarTemaUnidade();
+  const b=document.getElementById('perfil-unit-badge');
+  if(b) b.textContent=getUnidadeAtual();
+});
+</script>
+</body>
+</html>
