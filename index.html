@@ -386,6 +386,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
         <input type="date" id="relatorios-data-fim">
         <button class="btn-sm" onclick="selecionarPeriodo('custom')">Aplicar</button>
       </div>
+      <div class="hora-range-row" style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--tx2);font-weight:600">Horário:</label>
+        <input type="time" id="relatorios-hora-ini" onchange="carregarRelatorios()">
+        <span style="color:var(--tx2);font-size:12px">até</span>
+        <input type="time" id="relatorios-hora-fim" onchange="carregarRelatorios()">
+        <button class="btn-sm" onclick="limparHoraFiltro()">Limpar</button>
+      </div>
     </div>
     <div id="relatorios-conteudo"></div>
   </div>
@@ -663,16 +670,23 @@ const SEED_CUSTOS = [
 
 function seedCustosIfNeeded(cb){
   CUSTOS_REF.once('value').then(snap=>{
-    if(snap.exists()){ cb(); return; }
-    const obj={};
+    const existing = snap.val()||{};
     const used={};
+    Object.keys(existing).forEach(k=>{ used[k]=true; });
+    const updates={};
     SEED_CUSTOS.forEach(item=>{
       let key=slugify(item.nome)||('item_'+Math.random().toString(36).slice(2,8));
       while(used[key]) key=key+'_2';
       used[key]=true;
-      obj[key]=item;
+      if(!existing[key]){
+        updates[key]=item;
+      }
     });
-    CUSTOS_REF.set(obj).then(cb).catch(cb);
+    if(Object.keys(updates).length>0){
+      CUSTOS_REF.update(updates).then(cb).catch(cb);
+    } else {
+      cb();
+    }
   });
 }
 
@@ -967,8 +981,14 @@ async function salvarVendasNoFirebase(unidade, dataRows){
     porDia[dia].forEach(row=>{
       const rawKey = row.vendaNum+'|'+row.item+'|'+row.vEfetiva+'|'+row.descontos;
       const key = sanitizeVendaKey(rawKey);
+      const horaMin = row.data ? (row.data.getHours()*60+row.data.getMinutes()) : null;
+      const hora = row.data ? (String(row.data.getHours()).padStart(2,'0')+':'+String(row.data.getMinutes()).padStart(2,'0')) : null;
       if(existentes[key]){
         duplicadas++;
+        // registro antigo sem horário salvo: completa retroativamente sem contar a venda de novo
+        if(existentes[key].horaMin==null && horaMin!=null){
+          updates[key] = Object.assign({}, existentes[key], {hora, horaMin});
+        }
       } else {
         updates[key] = {
           vendaNum: row.vendaNum,
@@ -978,7 +998,8 @@ async function salvarVendasNoFirebase(unidade, dataRows){
           quantidade: row.quantidade,
           vEfetiva: row.vEfetiva,
           descontos: row.descontos,
-          vLiquida: row.vLiquida
+          vLiquida: row.vLiquida,
+          hora, horaMin
         };
         novas++;
       }
@@ -1096,24 +1117,50 @@ function getDatasPeriodo(p){
   }
   return [formatDateLocal(hoje)];
 }
+function getHoraFiltro(){
+  const iniEl=document.getElementById('relatorios-hora-ini');
+  const fimEl=document.getElementById('relatorios-hora-fim');
+  const ini=iniEl&&iniEl.value, fim=fimEl&&fimEl.value;
+  if(!ini&&!fim) return null;
+  const toMin=t=>{ const p=t.split(':').map(Number); return p[0]*60+p[1]; };
+  return { ini: ini?toMin(ini):0, fim: fim?toMin(fim):1439 };
+}
+function limparHoraFiltro(){
+  const iniEl=document.getElementById('relatorios-hora-ini');
+  const fimEl=document.getElementById('relatorios-hora-fim');
+  if(iniEl) iniEl.value='';
+  if(fimEl) fimEl.value='';
+  carregarRelatorios();
+}
 function carregarRelatorios(){
   const conteudo=document.getElementById('relatorios-conteudo');
   if(!conteudo) return;
   conteudo.innerHTML='<div class="empty-msg">Carregando...</div>';
   const slug=unidadeParaSlug(getUnidadeAtual());
   const datas=getDatasPeriodo(relatoriosPeriodoAtual);
+  const horaFiltro=getHoraFiltro();
   Promise.all(datas.map(d=>VENDAS_REF.child(slug).child(d).once('value').then(snap=>snap.val()||{})))
     .then(resultadosPorDia=>{
-      const linhas=[];
+      let linhas=[];
       resultadosPorDia.forEach(diaObj=>{ Object.values(diaObj).forEach(row=>{ if(row) linhas.push(row); }); });
-      renderRelatoriosConteudo(linhas);
+      let semHorarioIgnoradas=0;
+      if(horaFiltro){
+        linhas=linhas.filter(r=>{
+          if(r.horaMin==null){ semHorarioIgnoradas++; return false; }
+          return r.horaMin>=horaFiltro.ini && r.horaMin<=horaFiltro.fim;
+        });
+      }
+      renderRelatoriosConteudo(linhas, horaFiltro?semHorarioIgnoradas:0);
     });
 }
-function renderRelatoriosConteudo(linhas){
+function renderRelatoriosConteudo(linhas, semHorarioIgnoradas){
   const conteudo=document.getElementById('relatorios-conteudo');
   const perfil=sessionStorage.getItem('perfilAtivo');
+  const avisoHorario = semHorarioIgnoradas>0
+    ? '<div class="empty-msg" style="margin-bottom:10px">⚠️ '+semHorarioIgnoradas+' venda(s) desse período são de importações antigas sem horário salvo e ficaram fora do filtro. Reimporte o arquivo original uma vez para completar o horário (não conta a venda de novo).</div>'
+    : '';
   if(linhas.length===0){
-    conteudo.innerHTML='<div class="empty-msg">Nenhuma venda encontrada no período selecionado.</div>';
+    conteudo.innerHTML=avisoHorario+'<div class="empty-msg">Nenhuma venda encontrada no período/horário selecionado.</div>';
     return;
   }
   let vendaBruta=0, descontos=0, vendaLiquida=0;
@@ -1132,7 +1179,7 @@ function renderRelatoriosConteudo(linhas){
   const rankingGarcons=Object.entries(porVendedor).sort((a,b)=>b[1]-a[1]);
   const produtosOrdenados=Object.entries(porItem).sort((a,b)=>b[1].quantidade-a[1].quantidade).slice(0,15);
 
-  let html='<div class="dash-grid">'+
+  let html=avisoHorario+'<div class="dash-grid">'+
     '<div class="dash-card"><div class="dash-card-l">Venda bruta</div><div class="dash-card-v">'+fmtMoney(vendaBruta)+'</div></div>'+
     '<div class="dash-card"><div class="dash-card-l">Descontos</div><div class="dash-card-v">'+fmtMoney(descontos)+'</div></div>'+
     '<div class="dash-card"><div class="dash-card-l">Venda líquida</div><div class="dash-card-v">'+fmtMoney(vendaLiquida)+'</div></div>'+
