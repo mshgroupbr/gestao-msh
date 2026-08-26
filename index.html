@@ -408,6 +408,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
   </div>
 </div>
 
+<div class="screen" id="s-ponto">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Ponto / Frequência</h1><p id="ponto-unit-sub"></p></div>
+  </div>
+  <div class="body">
+    <div id="ponto-conteudo"></div>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -459,6 +469,7 @@ function goTo(id){
   if(id==='s-vendas-import') renderVendasImportScreen();
   if(id==='s-relatorios') renderRelatoriosScreen();
   if(id==='s-painel-vivo') renderPainelVivoScreen();
+  if(id==='s-ponto') renderPontoScreen();
 }
 function irLoginMaster(){
   document.getElementById('master-senha').value='';
@@ -480,7 +491,7 @@ function toast(msg){
 }
 
 /* ================= LOGIN MASTER ================= */
-const MASTER_SENHA = 'MSH-2026-Master';
+const MASTER_SENHA = '000813';
 function loginMaster(){
   const senha=document.getElementById('master-senha').value;
   const erro=document.getElementById('login-master-erro');
@@ -558,6 +569,7 @@ function renderHome(){
         '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
       '</div>'+
       '<div class="quick-stat-grid">'+
         '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
@@ -571,6 +583,7 @@ function renderHome(){
       '<div class="admin-grid">'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
       '</div>'+
       '<div class="quick-stat-grid">'+
         '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
@@ -1360,6 +1373,63 @@ function ptDateSimples(d){
   if(!d) return '—';
   const p=String(d).split('-');
   return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : d;
+}
+
+/* ================= PONTO / FREQUÊNCIA (checagem automática RHiD) ================= */
+const PONTO_REF = db.ref('gestao_ponto');
+function renderPontoScreen(){
+  const perfil=sessionStorage.getItem('perfilAtivo');
+  if(perfil!=='master' && perfil!=='gerente'){ goTo('s-unidade'); return; }
+  const sub=document.getElementById('ponto-unit-sub');
+  if(sub) sub.textContent=getUnidadeAtual();
+  carregarPonto();
+}
+function carregarPonto(){
+  const conteudo=document.getElementById('ponto-conteudo');
+  if(!conteudo) return;
+  conteudo.innerHTML='<div class="empty-msg">Carregando...</div>';
+  const unidade=getUnidadeAtual();
+  const slug = unidade==='Texas Country Bar' ? 'texas' : 'cali';
+  PONTO_REF.child(slug).limitToLast(30).once('value').then(snap=>{
+    const obj=snap.val()||{};
+    const dias=Object.values(obj).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+    renderPontoConteudo(dias, unidade, slug);
+  });
+}
+function renderPontoConteudo(dias, unidade, slug){
+  const conteudo=document.getElementById('ponto-conteudo');
+  let html='<div class="empty-msg" style="margin-bottom:10px">Checagem automática todo dia às 02:00, cruzando as marcações do RHiD. Falta de marcação ou intervalo acima de 30min aparecem aqui.</div>';
+  if(slug==='texas'){
+    html='<div class="empty-msg">Essa checagem automática ainda só está configurada para o Cali Cravings (RHiD dessa unidade). Avise se o Texas usar um RHiD próprio pra estendermos.</div>';
+    conteudo.innerHTML=html;
+    return;
+  }
+  if(dias.length===0){
+    html+='<div class="empty-msg">Nenhuma checagem registrada ainda. A primeira roda na próxima madrugada (ou use "Executar agora" na tarefa agendada).</div>';
+    conteudo.innerHTML=html;
+    return;
+  }
+  dias.forEach(d=>{
+    if(d.acessoOk===false){
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+ptDateSimples(d.data)+'</div></div></div>'+
+        '<div class="badge ba">⚠️ Não foi possível checar — '+escapeHtml(d.erro||'RHiD inacessível nesse horário')+'</div></div>';
+      return;
+    }
+    const ocorrencias=d.ocorrencias||[];
+    if(ocorrencias.length===0){
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+ptDateSimples(d.data)+'</div></div></div>'+
+        '<div class="badge" style="background:#e6f4ec;color:#1e7a46">✅ Tudo certo — nenhuma ocorrência</div></div>';
+    } else {
+      html+='<div class="ri"><div class="ri-top"><div><div class="ri-name">'+ptDateSimples(d.data)+'</div></div></div>'+
+        '<div class="badge br">🔴 '+ocorrencias.length+' ocorrência(s)</div>';
+      ocorrencias.forEach(o=>{
+        const tipoLb = o.tipo==='falta_marcacao' ? 'Falta de marcação' : 'Intervalo';
+        html+='<div class="ri-cat">• '+escapeHtml(o.nome||'—')+' — '+tipoLb+': '+escapeHtml(o.detalhe||'')+'</div>';
+      });
+      html+='</div>';
+    }
+  });
+  conteudo.innerHTML=html;
 }
 
 /* ================= HOME: QUICK STATS ================= */
