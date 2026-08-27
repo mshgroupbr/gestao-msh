@@ -1205,11 +1205,22 @@ function renderRelatoriosConteudo(linhas, semHorarioIgnoradas){
   const rankingGarcons=Object.entries(porVendedor).sort((a,b)=>b[1]-a[1]);
   const produtosOrdenados=Object.entries(porItem).sort((a,b)=>b[1].quantidade-a[1].quantidade).slice(0,15);
 
+  // Taxa de serviço (10%): soma o item "SERVIÇO" (comparação sem acento/maiúsculas pra pegar variações de grafia)
+  const normServ = s => (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
+  let servicoTotal=0;
+  Object.entries(porItem).forEach(([nome,d])=>{ if(normServ(nome)==='SERVICO') servicoTotal+=d.vLiquida; });
+  const taxaServicoPct = vendaLiquida>0 ? (servicoTotal/vendaLiquida*100) : 0;
+  const taxaForaPadrao = vendaLiquida>0 && Math.abs(taxaServicoPct-10)>2;
+
   let html=avisoHorario+'<div class="dash-grid">'+
     '<div class="dash-card"><div class="dash-card-l">Venda bruta</div><div class="dash-card-v">'+fmtMoney(vendaBruta)+'</div></div>'+
     '<div class="dash-card"><div class="dash-card-l">Descontos</div><div class="dash-card-v">'+fmtMoney(descontos)+'</div></div>'+
     '<div class="dash-card"><div class="dash-card-l">Venda líquida</div><div class="dash-card-v">'+fmtMoney(vendaLiquida)+'</div></div>'+
-  '</div>';
+    '<div class="dash-card"><div class="dash-card-l">Taxa de serviço (10%)</div><div class="dash-card-v">'+fmtMoney(servicoTotal)+'</div>'+
+      '<div style="font-size:12px;color:var(--tx2);margin-top:2px">'+taxaServicoPct.toFixed(1)+'% da venda líquida'+(taxaForaPadrao?' ⚠️':'')+'</div>'+
+    '</div>'+
+  '</div>'+
+  (taxaForaPadrao?'<div class="badge ba" style="display:block;margin-bottom:10px">⚠️ Taxa de serviço em '+taxaServicoPct.toFixed(1)+'% — fora do esperado (~10%). Pode indicar comandas sem o serviço lançado ou descontos indevidos nele.</div>':'');
 
   html+='<div class="sec-l">Ranking de garçons</div><div class="rank-list">';
   if(rankingGarcons.length===0){ html+='<div class="empty-msg">Sem dados.</div>'; }
