@@ -356,6 +356,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
     <div class="htxt"><h1>Importar Vendas</h1><p>Planilhas Allfood (.xlsx)</p></div>
   </div>
   <div class="body">
+    <div id="vendas-ultimo-importado" style="margin-bottom:12px"></div>
     <div class="card">
       <div class="field">
         <label class="fl">Arquivos (.xlsx)</label>
@@ -1044,6 +1045,39 @@ function renderVendasImportScreen(){
   if(input) input.value='';
   const resultsEl=document.getElementById('vendas-import-results');
   if(resultsEl) resultsEl.innerHTML='';
+  carregarUltimoImportadoVendas();
+}
+// Olha o último dia com vendas gravadas de cada unidade e o horário mais tarde
+// registrado nesse dia — assim o gestor sabe exatamente a partir de quando
+// (dia + hora) precisa cobrir no próximo relatório do Allfood, sem lacunas
+// nem risco de duplicar (duplicadas são ignoradas automaticamente de qualquer forma).
+async function ultimoImportadoInfo(slug){
+  const snap = await VENDAS_REF.child(slug).orderByKey().limitToLast(1).once('value');
+  if(!snap.exists()) return null;
+  let dia=null, registros=null;
+  snap.forEach(ch=>{ dia=ch.key; registros=ch.val(); });
+  let maxMin=-1;
+  Object.values(registros||{}).forEach(r=>{ if(r && r.horaMin!=null && r.horaMin>maxMin) maxMin=r.horaMin; });
+  const horaTxt = maxMin>=0 ? (String(Math.floor(maxMin/60)).padStart(2,'0')+':'+String(maxMin%60).padStart(2,'0')) : null;
+  return {dia, horaTxt};
+}
+async function carregarUltimoImportadoVendas(){
+  const el=document.getElementById('vendas-ultimo-importado');
+  if(!el) return;
+  el.innerHTML='<div class="card" style="font-size:12.5px;color:var(--tx2)">Verificando última importação...</div>';
+  const [cali,texas]=await Promise.all([ultimoImportadoInfo('cali'), ultimoImportadoInfo('texas')]);
+  function linha(nome,info){
+    if(!info) return '<div style="margin-top:4px">'+nome+': nenhum dado importado ainda.</div>';
+    const p=info.dia.split('-');
+    const dataBr = p[2]+'/'+p[1]+'/'+p[0];
+    return '<div style="margin-top:4px"><b>'+nome+'</b> — último registro em '+dataBr+(info.horaTxt?(' às '+info.horaTxt):'')+'</div>';
+  }
+  el.innerHTML = '<div class="card" style="background:#eef7f0;border-color:#cfe9d6;font-size:12.5px;line-height:1.5">'+
+    '📅 <b>A partir de quando importar</b>'+
+    linha('Cali Cravings',cali)+
+    linha('Texas Country Bar',texas)+
+    '<div style="margin-top:6px;color:var(--tx2)">Suba o próximo relatório cobrindo a partir desse horário (ou do início do dia seguinte). Vendas já importadas são ignoradas automaticamente, então não tem problema se o novo arquivo repetir um pedaço do período anterior.</div>'+
+  '</div>';
 }
 let vendasResultadosAtuais=[];
 async function importarVendasFiles(){
@@ -1073,6 +1107,7 @@ async function importarVendasFiles(){
   }
   vendasResultadosAtuais=resultados;
   renderVendasImportResults(resultados);
+  carregarUltimoImportadoVendas();
 }
 function renderVendasImportResults(resultados){
   const resultsEl=document.getElementById('vendas-import-results');
@@ -1105,6 +1140,7 @@ async function reprocessarComUnidade(idx){
   const {novas,duplicadas} = await salvarVendasNoFirebase(unidade, item.dataRows);
   vendasResultadosAtuais[idx]={fileName:item.fileName, unidade, novas, duplicadas};
   renderVendasImportResults(vendasResultadosAtuais);
+  carregarUltimoImportadoVendas();
 }
 
 /* ================= RELATORIOS SCREEN (master + gerente) ================= */
