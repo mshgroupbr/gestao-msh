@@ -137,6 +137,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .ri-cost-v.editable:active{opacity:.7}
 .edit-pencil{font-size:11px;opacity:.55}
 .ri-edit-input{width:90px;padding:8px 9px;font-size:14px}
+.bd-details{margin-top:10px;font-size:12.5px}
+.bd-details summary{cursor:pointer;color:var(--tx3);font-weight:600}
+.bd-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bdr2)}
+.bd-nome{color:var(--tx2)}
+.bd-qtd{color:var(--tx3);font-size:11px}
+.bd-custo{font-weight:600}
+.bd-total{border-bottom:none;border-top:1px solid var(--bdr2);margin-top:2px;padding-top:7px;font-weight:700}
 .badge{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;flex-shrink:0;white-space:nowrap;display:inline-block;margin-top:8px}
 .ba{background:var(--am-l);color:var(--am)}
 .br{background:var(--rd-l);color:var(--rd)}
@@ -312,6 +319,55 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
   </div>
 </div>
 
+
+<!-- 6b. NOTAS FISCAIS (master only) -->
+<div class="screen" id="s-notas-fiscais">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Notas Fiscais</h1><p>Bar · atualiza custo real dos ingredientes</p></div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="field">
+        <label class="fl">Data</label>
+        <input type="date" id="nf-form-data">
+      </div>
+      <div class="field">
+        <label class="fl">Fornecedor</label>
+        <input type="text" id="nf-form-fornecedor" placeholder="Nome do fornecedor">
+      </div>
+      <div class="field">
+        <label class="fl">Item da nota</label>
+        <input type="text" id="nf-form-item" placeholder="Descrição do item na nota">
+      </div>
+      <div class="field">
+        <label class="fl">Ingrediente do bar (vincular)</label>
+        <select id="nf-form-ingrediente"><option value="">— não vincular —</option></select>
+      </div>
+      <div class="field">
+        <label class="fl">Quantidade</label>
+        <input type="number" step="0.01" id="nf-form-qtd" placeholder="Ex: 1000">
+      </div>
+      <div class="field">
+        <label class="fl">Unidade</label>
+        <select id="nf-form-unidade">
+          <option value="g">g (gramas)</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="L">L (litros)</option>
+          <option value="un">un (unidade/pacote)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="fl">Valor total pago (R$)</label>
+        <input type="number" step="0.01" id="nf-form-valor" placeholder="Ex: 59.90">
+      </div>
+      <button class="btn-or" onclick="salvarNotaFiscal()">＋ Lançar nota fiscal</button>
+    </div>
+    <div id="notas-fiscais-list"></div>
+  </div>
+</div>
+
 <!-- 7. GERENTES (master only) -->
 <div class="screen" id="s-gerentes">
   <div class="hdr">
@@ -452,6 +508,9 @@ firebase.initializeApp({
 const db = firebase.database();
 const CUSTOS_REF = db.ref('gestao_custos');
 const GERENTES_REF = db.ref('gestao_gerentes');
+const INGREDIENTES_BAR_REF = db.ref('gestao_ingredientes_bar');
+const RECEITAS_BAR_REF = db.ref('gestao_receitas_bar');
+const NOTAS_FISCAIS_REF = db.ref('gestao_notas_fiscais');
 
 /* ================= UNIDADE ================= */
 function getUnidadeAtual(){ return localStorage.getItem('unidadeAtivaGestao')||'Cali Cravings'; }
@@ -472,7 +531,7 @@ function escolherUnidade(u){
 /* ================= NAV ================= */
 function goTo(id){
   // defensive: master-only screens can never render for a non-master session
-  if((id==='s-custos'||id==='s-gerentes'||id==='s-vendas-import') && sessionStorage.getItem('perfilAtivo')!=='master'){
+  if((id==='s-custos'||id==='s-gerentes'||id==='s-vendas-import'||id==='s-notas-fiscais') && sessionStorage.getItem('perfilAtivo')!=='master'){
     id='s-home';
   }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -482,6 +541,7 @@ function goTo(id){
   if(id==='s-login-gerente') popularGerentes();
   if(id==='s-home') renderHome();
   if(id==='s-custos') renderCustosScreen();
+  if(id==='s-notas-fiscais') renderNotasFiscaisScreen();
   if(id==='s-gerentes') renderGerentesScreen();
   if(id==='s-vendas-import') renderVendasImportScreen();
   if(id==='s-relatorios') renderRelatoriosScreen();
@@ -582,6 +642,7 @@ function renderHome(){
       '<div class="welcome-txt">Gestão Master — '+unidade+'</div>'+
       '<div class="admin-grid">'+
         '<div class="admin-card" onclick="goTo(\'s-custos\')"><div class="admin-ico">💰</div><div class="admin-lb">Custos</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-notas-fiscais\')"><div class="admin-ico">🧾</div><div class="admin-lb">Notas Fiscais</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-gerentes\')"><div class="admin-ico">👥</div><div class="admin-lb">Gerentes</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
@@ -784,9 +845,15 @@ function listaCategoriasDisponiveis(){
 /* ================= CUSTOS SCREEN ================= */
 let custosCache={};
 let custosListenerOn=false;
+let receitasBarCache={};
+let ingredientesBarCache={};
+let notasFiscaisCache={};
+let barDataListenerOn=false;
+let notasFiscaisListenerBound=false;
 function renderCustosScreen(){
   if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
   seedCustosIfNeeded(()=>{
+    carregarDadosBarSeNecessario();
     if(!custosListenerOn){
       custosListenerOn=true;
       CUSTOS_REF.on('value', snap=>{
@@ -840,6 +907,7 @@ function drawCustosList(){
           '</div>'+
           (v.custo_allfood!=null?'<div class="ri-cost-block"><div class="ri-cost-l">Allfood</div><div class="ri-cost-v">'+fmtMoney(v.custo_allfood)+'</div></div>':'')+
         '</div>'+
+        (v.categoria==='Bar' ? renderIngredientesBreakdownHtml(k) : '')+
         badge+
       '</div>';
     });
@@ -1713,6 +1781,165 @@ function renderFreelancersPanelConteudo(){
   });
   html += '<div class="card" style="background:#FCE4D6"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px"><div>TOTAL GERAL</div><div>'+frlpBrl(totalGeral)+'</div></div></div>';
   conteudo.innerHTML = html;
+}
+
+function carregarDadosBarSeNecessario(){
+  if(barDataListenerOn) return;
+  barDataListenerOn=true;
+  INGREDIENTES_BAR_REF.on('value', function(snap){
+    ingredientesBarCache = snap.val()||{};
+    if(document.getElementById('custos-list')) drawCustosList();
+    popularSelectIngredientesNF();
+  });
+  RECEITAS_BAR_REF.on('value', function(snap){
+    receitasBarCache = snap.val()||{};
+    if(document.getElementById('custos-list')) drawCustosList();
+  });
+}
+function precoUnitarioIngrediente(ingKey){
+  const cat = ingredientesBarCache[ingKey];
+  if(!cat || !cat.qtd_embalagem) return 0;
+  return cat.preco / cat.qtd_embalagem;
+}
+function calcularCustoReceitaBar(itemKey){
+  const r = receitasBarCache[itemKey];
+  if(!r) return null;
+  let total=0;
+  r.ingredientes.forEach(function(ing){
+    total += (ing.qtd||0) * precoUnitarioIngrediente(ing.ingredienteKey);
+  });
+  return total;
+}
+function renderIngredientesBreakdownHtml(itemKey){
+  const r = receitasBarCache[itemKey];
+  if(!r || !r.ingredientes || !r.ingredientes.length) return '';
+  let rows='';
+  let total=0;
+  r.ingredientes.forEach(function(ing){
+    const cat = ingredientesBarCache[ing.ingredienteKey];
+    const nome = cat ? cat.nome : ing.ingredienteKey;
+    const custoLinha = (ing.qtd||0) * precoUnitarioIngrediente(ing.ingredienteKey);
+    total += custoLinha;
+    rows += '<div class="bd-row"><div class="bd-nome">'+escapeHtml(nome)+' <span class="bd-qtd">('+ing.qtd+ing.unidade+')</span></div><div class="bd-custo">'+fmtMoney(custoLinha)+'</div></div>';
+  });
+  return '<details class="bd-details"><summary>Ver ingredientes ('+r.ingredientes.length+')</summary>'+rows+'<div class="bd-row bd-total"><div class="bd-nome">Total calculado</div><div class="bd-custo">'+fmtMoney(total)+'</div></div></details>';
+}
+function popularSelectIngredientesNF(){
+  const sel = document.getElementById('nf-form-ingrediente');
+  if(!sel) return;
+  const atual = sel.value;
+  const entries = Object.entries(ingredientesBarCache).sort(function(a,b){ return (a[1].nome||'').localeCompare(b[1].nome||'','pt-BR'); });
+  sel.innerHTML = '<option value="">— não vincular —</option>' + entries.map(function(e){ var k=e[0], v=e[1]; return '<option value="'+k+'">'+escapeHtml(v.nome)+' (R$ '+v.preco+' / '+v.qtd_embalagem+v.unidade+')</option>'; }).join('');
+  sel.value = atual;
+}
+function recalcularReceitasBar(ingredienteKey){
+  const afetados = Object.entries(receitasBarCache).filter(function(e){ return e[1].ingredientes.some(function(ing){ return ing.ingredienteKey===ingredienteKey; }); }).map(function(e){ return e[0]; });
+  afetados.forEach(function(itemKey){
+    const novoCusto = calcularCustoReceitaBar(itemKey);
+    if(novoCusto===null) return;
+    const item = custosCache[itemKey];
+    if(!item) return;
+    const updates = { custo_ficha_tecnica: novoCusto };
+    if(item.custo_allfood!=null && novoCusto>0){
+      const pct = (item.custo_allfood - novoCusto)/novoCusto*100;
+      updates.divergencia_pct = Math.round(pct*10)/10;
+      updates.alerta_divergencia = Math.abs(pct)>10;
+    } else {
+      updates.divergencia_pct = null;
+      updates.alerta_divergencia = false;
+    }
+    updates.sem_custo = !(novoCusto>0);
+    CUSTOS_REF.child(itemKey).update(updates);
+  });
+}
+function converterParaUnidadeBaseNF(qtd, unidade){
+  if(unidade==='kg') return {qtdBase: qtd*1000, unidadeBase:'g'};
+  if(unidade==='L') return {qtdBase: qtd*1000, unidadeBase:'ml'};
+  return {qtdBase: qtd, unidadeBase: unidade};
+}
+function salvarNotaFiscal(){
+  const data = document.getElementById('nf-form-data').value;
+  const fornecedor = (document.getElementById('nf-form-fornecedor').value||'').trim();
+  const item = (document.getElementById('nf-form-item').value||'').trim();
+  const ingredienteKey = document.getElementById('nf-form-ingrediente').value;
+  const qtd = parseFloat(document.getElementById('nf-form-qtd').value);
+  const unidade = document.getElementById('nf-form-unidade').value;
+  const valorTotal = parseFloat(document.getElementById('nf-form-valor').value);
+  if(!fornecedor || !item || isNaN(qtd) || qtd<=0 || isNaN(valorTotal) || valorTotal<=0){
+    alert('Preencha fornecedor, item, quantidade e valor corretamente.');
+    return;
+  }
+  const conv = converterParaUnidadeBaseNF(qtd, unidade);
+  const registro = {
+    data: data || new Date().toISOString().slice(0,10),
+    fornecedor: fornecedor, item: item, ingredienteKey: ingredienteKey||null,
+    qtd: qtd, unidade: unidade, qtdBase: conv.qtdBase, unidadeBase: conv.unidadeBase, valorTotal: valorTotal,
+    valorUnitOriginal: valorTotal/qtd,
+    criadoEm: Date.now()
+  };
+  NOTAS_FISCAIS_REF.push(registro).then(function(){
+    if(ingredienteKey && ingredientesBarCache[ingredienteKey]){
+      INGREDIENTES_BAR_REF.child(ingredienteKey).update({ preco: valorTotal, qtd_embalagem: conv.qtdBase, unidade: conv.unidadeBase }).then(function(){
+        ingredientesBarCache[ingredienteKey] = Object.assign({}, ingredientesBarCache[ingredienteKey], {preco:valorTotal, qtd_embalagem:conv.qtdBase, unidade:conv.unidadeBase});
+        recalcularReceitasBar(ingredienteKey);
+      });
+    }
+    document.getElementById('nf-form-fornecedor').value='';
+    document.getElementById('nf-form-item').value='';
+    document.getElementById('nf-form-qtd').value='';
+    document.getElementById('nf-form-valor').value='';
+  });
+}
+function renderNotasFiscaisScreen(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
+  const dataEl = document.getElementById('nf-form-data');
+  if(dataEl && !dataEl.value) dataEl.value = new Date().toISOString().slice(0,10);
+  carregarDadosBarSeNecessario();
+  popularSelectIngredientesNF();
+  if(!notasFiscaisListenerBound){
+    notasFiscaisListenerBound=true;
+    NOTAS_FISCAIS_REF.on('value', function(snap){
+      notasFiscaisCache = snap.val()||{};
+      drawNotasFiscaisList();
+    });
+  } else {
+    drawNotasFiscaisList();
+  }
+}
+function drawNotasFiscaisList(){
+  const list = document.getElementById('notas-fiscais-list');
+  if(!list) return;
+  const entries = Object.entries(notasFiscaisCache);
+  if(!entries.length){
+    list.innerHTML = '<div class="empty-msg">Nenhuma nota fiscal lançada ainda.</div>';
+    return;
+  }
+  entries.sort(function(a,b){ return (b[1].data||'').localeCompare(a[1].data||'') || (b[1].criadoEm||0)-(a[1].criadoEm||0); });
+  let html='';
+  entries.forEach(function(e){
+    const k=e[0], v=e[1];
+    const ing = v.ingredienteKey ? ingredientesBarCache[v.ingredienteKey] : null;
+    html += '<div class="ri">'+
+      '<div class="ri-top"><div><div class="ri-name">'+escapeHtml(v.item)+'</div><div class="bd-qtd">'+escapeHtml(v.fornecedor)+' · '+isoParaBRNF(v.data)+'</div></div></div>'+
+      '<div class="ri-costs">'+
+        '<div class="ri-cost-block"><div class="ri-cost-l">Qtd</div><div class="ri-cost-v">'+v.qtd+' '+v.unidade+'</div></div>'+
+        '<div class="ri-cost-block"><div class="ri-cost-l">Valor total</div><div class="ri-cost-v">'+fmtMoney(v.valorTotal)+'</div></div>'+
+      '</div>'+
+      (ing ? '<div class="badge" style="background:#E8F5E9;color:#2E7D32">🔗 Vinculado a: '+escapeHtml(ing.nome)+'</div>' : '<div class="badge">Sem vínculo com ingrediente</div>')+
+      '<div class="ger-actions"><button class="btn-sm danger" onclick="excluirNotaFiscal(\''+k+'\')">🗑️ Excluir</button></div>'+
+    '</div>';
+  });
+  list.innerHTML = html;
+}
+function excluirNotaFiscal(key){
+  if(!confirm('Excluir esta nota fiscal? (isso não desfaz o preço do ingrediente já atualizado)')) return;
+  NOTAS_FISCAIS_REF.child(key).remove();
+}
+function isoParaBRNF(iso){
+  if(!iso) return '';
+  const p = iso.split('-');
+  if(p.length!==3) return iso;
+  return p[2]+'/'+p[1]+'/'+p[0];
 }
 </script>
 </body>
