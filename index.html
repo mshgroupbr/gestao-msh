@@ -716,16 +716,22 @@ const SEED_CUSTOS = [
 function seedCustosIfNeeded(cb){
   CUSTOS_REF.once('value').then(snap=>{
     const existing = snap.val()||{};
+    const existingByNome={};
+    Object.keys(existing).forEach(k=>{
+      const n=(existing[k].nome||'').trim().toLowerCase();
+      if(n) existingByNome[n]=true;
+    });
     const used={};
     Object.keys(existing).forEach(k=>{ used[k]=true; });
     const updates={};
     SEED_CUSTOS.forEach(item=>{
+      const nomeNorm=(item.nome||'').trim().toLowerCase();
+      if(existingByNome[nomeNorm]) return;
       let key=slugify(item.nome)||('item_'+Math.random().toString(36).slice(2,8));
       while(used[key]) key=key+'_2';
       used[key]=true;
-      if(!existing[key]){
-        updates[key]=item;
-      }
+      updates[key]=item;
+      existingByNome[nomeNorm]=true;
     });
     if(Object.keys(updates).length>0){
       CUSTOS_REF.update(updates).then(cb).catch(cb);
