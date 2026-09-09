@@ -409,18 +409,28 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 <div class="screen" id="s-vendas-import">
   <div class="hdr">
     <button class="back" onclick="goTo('s-home')">‹</button>
-    <div class="htxt"><h1>Importar Vendas</h1><p>Planilhas Allfood (.xlsx)</p></div>
+    <div class="htxt"><h1>Fechamento Noturno</h1><p>Vendas + Detalhamento financeiro (Allfood)</p></div>
   </div>
   <div class="body">
     <div id="vendas-ultimo-importado" style="margin-bottom:12px"></div>
     <div class="card">
       <div class="field">
-        <label class="fl">Arquivos (.xlsx)</label>
+        <label class="fl">1. Vendas (.xlsx)</label>
         <input type="file" id="vendas-file-input" multiple accept=".xlsx,.xls">
       </div>
-      <button class="btn-or" onclick="importarVendasFiles()">Importar</button>
+      <button class="btn-or" onclick="importarVendasFiles()">Importar vendas</button>
     </div>
     <div id="vendas-import-results"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="field">
+        <label class="fl">2. Detalhamento financeiro (.xlsx)</label>
+        <input type="file" id="fechamento-file-input" multiple accept=".xlsx,.xls">
+      </div>
+      <button class="btn-or" onclick="importarFechamentoFinanceiro()">Enviar detalhamento</button>
+    </div>
+    <div id="fechamento-import-results"></div>
+    <div class="sec-l" style="margin-top:14px">Últimos envios</div>
+    <div id="fechamento-recent-list"></div>
   </div>
 </div>
 
@@ -511,6 +521,7 @@ const GERENTES_REF = db.ref('gestao_gerentes');
 const INGREDIENTES_BAR_REF = db.ref('gestao_ingredientes_bar');
 const RECEITAS_BAR_REF = db.ref('gestao_receitas_bar');
 const NOTAS_FISCAIS_REF = db.ref('gestao_notas_fiscais');
+const FECHAMENTOS_FIN_REF = db.ref('gestao_fechamentos_financeiros');
 
 /* ================= UNIDADE ================= */
 function getUnidadeAtual(){ return localStorage.getItem('unidadeAtivaGestao')||'Cali Cravings'; }
@@ -531,7 +542,7 @@ function escolherUnidade(u){
 /* ================= NAV ================= */
 function goTo(id){
   // defensive: master-only screens can never render for a non-master session
-  if((id==='s-custos'||id==='s-gerentes'||id==='s-vendas-import'||id==='s-notas-fiscais') && sessionStorage.getItem('perfilAtivo')!=='master'){
+  if((id==='s-custos'||id==='s-gerentes'||id==='s-notas-fiscais') && sessionStorage.getItem('perfilAtivo')!=='master'){
     id='s-home';
   }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -661,6 +672,7 @@ function renderHome(){
       '<div class="welcome-txt">Olá, '+nome+'! 👋<br><span style="font-weight:400;font-size:13px;opacity:.65">'+unidade+'</span></div>'+
       '<div class="admin-grid">'+
         '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">🌙</div><div class="admin-lb">Fechamento Noturno</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-freelancers-panel\');renderFreelancersPanel()"><div class="admin-ico">📋</div><div class="admin-lb">Freelancers</div></div>'+
         '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
@@ -1178,12 +1190,18 @@ async function salvarVendasNoFirebase(unidade, dataRows){
 
 /* ================= VENDAS IMPORT SCREEN (master only) ================= */
 function renderVendasImportScreen(){
-  if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
+  const __perfilVI = sessionStorage.getItem('perfilAtivo');
+  if(__perfilVI!=='master' && __perfilVI!=='gerente'){ goTo('s-home'); return; }
   const input=document.getElementById('vendas-file-input');
   if(input) input.value='';
   const resultsEl=document.getElementById('vendas-import-results');
   if(resultsEl) resultsEl.innerHTML='';
+  const fInput=document.getElementById('fechamento-file-input');
+  if(fInput) fInput.value='';
+  const fResultsEl=document.getElementById('fechamento-import-results');
+  if(fResultsEl) fResultsEl.innerHTML='';
   carregarUltimoImportadoVendas();
+  renderFechamentosFinanceirosList();
 }
 // Olha o último dia com vendas gravadas de cada unidade e o horário mais tarde
 // registrado nesse dia — assim o gestor sabe exatamente a partir de quando
@@ -1219,7 +1237,8 @@ async function carregarUltimoImportadoVendas(){
 }
 let vendasResultadosAtuais=[];
 async function importarVendasFiles(){
-  if(sessionStorage.getItem('perfilAtivo')!=='master') return;
+  const __perfilIV = sessionStorage.getItem('perfilAtivo');
+  if(__perfilIV!=='master' && __perfilIV!=='gerente') return;
   const input=document.getElementById('vendas-file-input');
   const files=Array.from((input&&input.files)||[]);
   const resultsEl=document.getElementById('vendas-import-results');
@@ -1940,6 +1959,81 @@ function isoParaBRNF(iso){
   const p = iso.split('-');
   if(p.length!==3) return iso;
   return p[2]+'/'+p[1]+'/'+p[0];
+}
+
+function importarFechamentoFinanceiro(){
+  const __perfilFF = sessionStorage.getItem('perfilAtivo');
+  if(__perfilFF!=='master' && __perfilFF!=='gerente') return;
+  const input = document.getElementById('fechamento-file-input');
+  const files = Array.from((input && input.files)||[]);
+  const resultsEl = document.getElementById('fechamento-import-results');
+  if(files.length===0){ toast('Selecione ao menos um arquivo'); return; }
+  resultsEl.innerHTML = '<div class="empty-msg">Enviando...</div>';
+  const unidade = getUnidadeAtual();
+  const slug = unidadeParaSlug(unidade);
+  const hoje = formatDateLocal(new Date());
+  const enviadoPor = sessionStorage.getItem('gerenteNome') || 'Master';
+  const promessas = files.map(function(file){
+    return new Promise(function(resolve, reject){
+      const reader = new FileReader();
+      reader.onload = function(){
+        const base64 = reader.result.split(',')[1];
+        FECHAMENTOS_FIN_REF.child(slug).child(hoje).set({
+          fileName: file.name,
+          base64: base64,
+          enviadoPor: enviadoPor,
+          timestamp: Date.now()
+        }).then(resolve).catch(reject);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  });
+  Promise.all(promessas).then(function(){
+    resultsEl.innerHTML = '<div class="ri"><div class="ri-name">Enviado com sucesso!</div></div>';
+    if(input) input.value='';
+    renderFechamentosFinanceirosList();
+  }).catch(function(err){
+    resultsEl.innerHTML = '<div class="ri"><div class="badge br">Erro: '+escapeHtml(String((err&&err.message)||err))+'</div></div>';
+  });
+}
+function renderFechamentosFinanceirosList(){
+  const el = document.getElementById('fechamento-recent-list');
+  if(!el) return;
+  el.innerHTML = '<div class="empty-msg">Carregando...</div>';
+  FECHAMENTOS_FIN_REF.once('value').then(function(snap){
+    const val = snap.val()||{};
+    const rows=[];
+    Object.entries(val).forEach(function(e){
+      const slug=e[0], dias=e[1];
+      Object.entries(dias||{}).forEach(function(e2){
+        rows.push({slug:slug, dia:e2[0], info:e2[1]});
+      });
+    });
+    if(!rows.length){ el.innerHTML='<div class="empty-msg">Nenhum fechamento enviado ainda.</div>'; return; }
+    rows.sort(function(a,b){ return b.dia.localeCompare(a.dia) || (b.info.timestamp||0)-(a.info.timestamp||0); });
+    const nomeUnidade = {cali:'Cali Cravings', texas:'Texas Country Bar'};
+    let html='';
+    rows.slice(0,20).forEach(function(r){
+      const p=r.dia.split('-'); const dataBr=p[2]+'/'+p[1]+'/'+p[0];
+      html += '<div class="ri"><div class="ri-top"><div><div class="ri-name">'+(nomeUnidade[r.slug]||r.slug)+' — '+dataBr+'</div><div class="bd-qtd">'+escapeHtml(r.info.fileName)+' · enviado por '+escapeHtml(r.info.enviadoPor||'')+'</div></div></div>'+
+        '<div class="ger-actions"><button class="btn-sm" onclick="baixarFechamentoFinanceiro(\''+r.slug+'\',\''+r.dia+'\')">⬇️ Baixar</button></div>'+
+      '</div>';
+    });
+    el.innerHTML = html;
+  });
+}
+function baixarFechamentoFinanceiro(slug, dia){
+  FECHAMENTOS_FIN_REF.child(slug).child(dia).once('value').then(function(snap){
+    const info = snap.val();
+    if(!info) return;
+    const a = document.createElement('a');
+    a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+info.base64;
+    a.download = info.fileName || 'fechamento.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
 }
 </script>
 </body>
