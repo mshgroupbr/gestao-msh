@@ -205,6 +205,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .quick-stat-l{font-size:10.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
 .quick-stat-v{font-size:20px;font-weight:700}
 .qs-ico{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;margin:0 auto 8px}
+.home-tabs{display:flex;gap:4px;overflow-x:auto;padding:0 16px;background:var(--surf);border-bottom:.5px solid var(--bdr);position:sticky;top:0;z-index:15}
+.home-tab-btn{background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;color:var(--tx2);padding:12px 10px;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;-webkit-tap-highlight-color:transparent}
+.home-tab-btn.active{color:var(--or);border-bottom-color:var(--or)}
+.kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+.kpi-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:12px 14px}
+.kpi-l{font-size:10.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.kpi-v{font-size:17px;font-weight:700}
+.chart-bars{display:flex;align-items:flex-end;gap:6px;height:110px}
+.chart-bar{flex:1;background:var(--or);border-radius:4px 4px 0 0;min-height:2px;position:relative}
+.chart-bar-lb{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--tx3)}
+.cat-bar-row{margin-bottom:10px}
+.cat-bar-track{height:6px;background:var(--surf2);border-radius:3px;margin-top:4px}
+.cat-bar-fill{height:6px;background:var(--or);border-radius:3px}
 </style>
 </head>
 <body>
@@ -311,6 +324,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
       <button class="sair-link" onclick="sair()">Sair</button>
     </div>
   </div>
+  <div class="home-tabs" id="home-tabs"></div>
   <div class="body" id="home-body"></div>
 </div>
 
@@ -651,13 +665,65 @@ function loginGerente(){
   });
 }
 
-/* ================= HOME ================= */
-function renderHome(){
+/* ================= HOME (abas) ================= */
+let homeTabAtual='visao';
+function homeTabsDisponiveis(perfil){
+  return perfil==='master'
+    ? [['visao','Visão geral'],['vendas','Vendas'],['custos','Custos'],['equipe','Equipe'],['aovivo','Ao vivo']]
+    : [['visao','Visão geral'],['vendas','Vendas'],['equipe','Equipe'],['aovivo','Ao vivo']];
+}
+function renderHomeTabsBar(perfil){
+  const tabsEl=document.getElementById('home-tabs');
+  if(!tabsEl) return;
+  const tabs=homeTabsDisponiveis(perfil);
+  if(!tabs.find(function(t){return t[0]===homeTabAtual;})) homeTabAtual='visao';
+  tabsEl.innerHTML=tabs.map(function(t){
+    return '<button class="home-tab-btn'+(homeTabAtual===t[0]?' active':'')+'" onclick="selecionarHomeTab(\''+t[0]+'\')">'+t[1]+'</button>';
+  }).join('');
+}
+function selecionarHomeTab(tab){
+  homeTabAtual=tab;
   const perfil=sessionStorage.getItem('perfilAtivo');
-  const unidade=getUnidadeAtual();
-  const badge=document.getElementById('home-unidade-badge');
-  if(badge) badge.textContent=unidade;
+  renderHomeTabsBar(perfil);
+  renderHomeTabConteudo(perfil);
+}
+function renderHomeTabConteudo(perfil){
   const body=document.getElementById('home-body');
+  if(!body) return;
+  if(homeTabAtual==='vendas') return renderHomeTabVendas(perfil, body);
+  if(homeTabAtual==='custos' && perfil==='master') return renderHomeTabCustos(body);
+  if(homeTabAtual==='equipe') return renderHomeTabEquipe(perfil, body);
+  if(homeTabAtual==='aovivo') return renderHomeTabAoVivo(body);
+  return renderHomeTabVisao(perfil, body);
+}
+function slugAtual(){ return unidadeParaSlug(getUnidadeAtual()); }
+function normalizaTxtHome(v){ return (v||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim(); }
+function excluirServicoHome(nome){ return normalizaTxtHome(nome)!=='SERVICO'; }
+function agregarVendasHome(dias, slug){
+  return Promise.all(dias.map(function(d){
+    return VENDAS_REF.child(slug).child(d).once('value').then(function(snap){ return {d:d, obj:snap.val()||{}}; });
+  })).then(function(resultados){
+    const porDia={}, porItem={}; const vendaNums={};
+    let vendaLiquida=0;
+    resultados.forEach(function(r){
+      let totalDia=0;
+      Object.values(r.obj).forEach(function(row){
+        if(!row) return;
+        const vl=Number(row.vLiquida)||0;
+        totalDia+=vl; vendaLiquida+=vl;
+        if(row.vendaNum!=null) vendaNums[row.vendaNum]=true;
+        const item=row.item||'(sem item)';
+        if(!porItem[item]) porItem[item]={quantidade:0,vLiquida:0};
+        porItem[item].quantidade+=Number(row.quantidade)||0;
+        porItem[item].vLiquida+=vl;
+      });
+      porDia[r.d]=totalDia;
+    });
+    return {porDia:porDia, porItem:porItem, vendaLiquida:vendaLiquida, vendaNumsCount:Object.keys(vendaNums).length};
+  });
+}
+function renderHomeTabVisao(perfil, body){
+  const unidade=getUnidadeAtual();
   if(perfil==='master'){
     body.innerHTML=
       '<div class="welcome-txt">Gestão Master — '+unidade+'</div>'+
@@ -691,10 +757,155 @@ function renderHome(){
         '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico" style="background:var(--am-l);color:var(--am)">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
       '</div>';
     carregarHomeQuickStatsGerente();
-  } else {
-    // no valid session — force back through the access flow
-    goTo('s-unidade');
   }
+}
+function renderHomeTabVendas(perfil, body){
+  body.innerHTML='<div class="empty-msg">Carregando vendas...</div>';
+  const slug=slugAtual();
+  const hoje=formatDateLocal(new Date());
+  Promise.all([
+    agregarVendasHome([hoje], slug),
+    agregarVendasHome(getDatasPeriodo('30'), slug),
+    agregarVendasHome(getDatasPeriodo('7'), slug)
+  ]).then(function(res){
+    const dHoje=res[0], d30=res[1], d7=res[2];
+    const itensHoje=Object.entries(dHoje.porItem).filter(function(e){return excluirServicoHome(e[0]);});
+    const qtdHoje=itensHoje.reduce(function(a,e){return a+e[1].quantidade;},0);
+    const top4=itensHoje.sort(function(a,b){return b[1].quantidade-a[1].quantidade;}).slice(0,4);
+    const ticketMedio30=d30.vendaNumsCount>0 ? d30.vendaLiquida/d30.vendaNumsCount : 0;
+    const dias7=getDatasPeriodo('7').slice().reverse();
+    const maxDia=Math.max(1, dias7.reduce(function(m,d){return Math.max(m, d7.porDia[d]||0);},0));
+    const barsHtml=dias7.map(function(d){
+      const v=d7.porDia[d]||0;
+      const h=Math.max(2, Math.round(v/maxDia*100));
+      const lb=d.slice(8,10)+'/'+d.slice(5,7);
+      return '<div class="chart-bar" style="height:'+h+'%"><span class="chart-bar-lb">'+lb+'</span></div>';
+    }).join('');
+    const rankHtml=top4.length ? top4.map(function(e){
+      return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(e[0])+'</div><div class="prod-qtd">'+e[1].quantidade+' un</div></div>';
+    }).join('') : '<div class="empty-msg">Sem vendas hoje ainda</div>';
+    body.innerHTML=
+      '<div class="kpi-row">'+
+        '<div class="kpi-card"><div class="kpi-l">Vendas hoje</div><div class="kpi-v">'+fmtMoney(dHoje.vendaLiquida)+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Vendas (30 dias)</div><div class="kpi-v">'+fmtMoney(d30.vendaLiquida)+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Ticket médio (30d)</div><div class="kpi-v">'+fmtMoney(ticketMedio30)+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Itens vendidos hoje</div><div class="kpi-v">'+qtdHoje+'</div></div>'+
+      '</div>'+
+      '<div class="card" style="margin-bottom:24px"><div class="sec-l" style="margin-top:0">Vendas por dia — últimos 7 dias</div>'+
+        '<div class="chart-bars">'+barsHtml+'</div>'+
+      '</div>'+
+      '<div class="sec-l">Mais vendidos hoje</div>'+
+      '<div class="prod-list">'+rankHtml+'</div>';
+  }).catch(function(){ body.innerHTML='<div class="empty-msg">Não foi possível carregar as vendas agora.</div>'; });
+}
+function renderHomeTabCustos(body){
+  body.innerHTML='<div class="empty-msg">Carregando custos...</div>';
+  const slug=slugAtual();
+  Promise.all([
+    agregarVendasHome(getDatasPeriodo('30'), slug),
+    CUSTOS_REF.once('value').then(function(s){return s.val()||{};}),
+    NOTAS_FISCAIS_REF.once('value').then(function(s){return s.val()||{};})
+  ]).then(function(res){
+    const d30=res[0], custos=res[1], notas=res[2];
+    const custosPorNome={};
+    Object.values(custos).forEach(function(c){ custosPorNome[slugify(c.nome)]=c; });
+    let cmvTotal=0;
+    const custoPorCategoria={};
+    Object.entries(d30.porItem).forEach(function(e){
+      const nome=e[0], dados=e[1];
+      const entry=custosPorNome[slugify(nome)];
+      if(!entry) return;
+      const custoUnit=Number(entry.custo_ficha_tecnica)||0;
+      const custoItemTotal=custoUnit*dados.quantidade;
+      cmvTotal+=custoItemTotal;
+      const cat=entry.categoria||'Sem categoria';
+      custoPorCategoria[cat]=(custoPorCategoria[cat]||0)+custoItemTotal;
+    });
+    const cmvPct=d30.vendaLiquida>0 ? (cmvTotal/d30.vendaLiquida*100) : 0;
+    const semCusto=Object.values(custos).filter(function(c){return c.sem_custo;}).length;
+    const comDivergencia=Object.values(custos).filter(function(c){return c.alerta_divergencia;}).length;
+    const catOrdenadas=Object.entries(custoPorCategoria).sort(function(a,b){return b[1]-a[1];});
+    const maiorCategoria=catOrdenadas.length ? catOrdenadas[0][0] : '—';
+    const maxCat=Math.max(1, catOrdenadas.reduce(function(m,e){return Math.max(m,e[1]);},0));
+    const catHtml=catOrdenadas.length ? catOrdenadas.slice(0,5).map(function(e){
+      return '<div class="cat-bar-row"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx2)"><span>'+escapeHtml(e[0])+'</span><span>'+fmtMoney(e[1])+'</span></div><div class="cat-bar-track"><div class="cat-bar-fill" style="width:'+Math.round(e[1]/maxCat*100)+'%"></div></div></div>';
+    }).join('') : '<div class="empty-msg">Sem dados de custo nos últimos 30 dias</div>';
+    const notasArr=Object.values(notas).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');}).slice(0,3);
+    const notasHtml=notasArr.length ? notasArr.map(function(n){
+      return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(n.fornecedor||'—')+'</div><div class="prod-qtd">'+fmtMoney(Number(n.valor)||0)+'</div></div>';
+    }).join('') : '<div class="empty-msg">Nenhuma nota fiscal lançada ainda</div>';
+    body.innerHTML=
+      '<div class="kpi-row">'+
+        '<div class="kpi-card"><div class="kpi-l">CMV (30 dias)</div><div class="kpi-v">'+cmvPct.toFixed(1)+'%</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Sem custo cadastrado</div><div class="kpi-v">'+semCusto+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Com divergência</div><div class="kpi-v">'+comDivergencia+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Maior categoria</div><div class="kpi-v" style="font-size:14px">'+escapeHtml(maiorCategoria)+'</div></div>'+
+      '</div>'+
+      '<div class="card" style="margin-bottom:24px"><div class="sec-l" style="margin-top:0">Custo por categoria — últimos 30 dias</div>'+catHtml+'</div>'+
+      '<div class="sec-l">Notas fiscais recentes</div>'+
+      '<div class="prod-list">'+notasHtml+'</div>';
+  }).catch(function(){ body.innerHTML='<div class="empty-msg">Não foi possível carregar os custos agora.</div>'; });
+}
+function renderHomeTabEquipe(perfil, body){
+  body.innerHTML='<div class="empty-msg">Carregando equipe...</div>';
+  const unidade=getUnidadeAtual();
+  const hoje=formatDateLocal(new Date());
+  const slugPonto=unidade==='Texas Country Bar' ? 'texas' : 'cali';
+  Promise.all([
+    db.ref('turnos').once('value').then(function(s){return s.val()||{};}),
+    db.ref('freelancers').once('value').then(function(s){return s.val()||{};}),
+    PONTO_REF.child(slugPonto).limitToLast(5).once('value').then(function(s){return s.val()||{};})
+  ]).then(function(res){
+    const turnosObj=res[0], freelancersObj=res[1], pontoObj=res[2];
+    const monday=frlpGetMonday(new Date());
+    const sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
+    const startIso=frlpIsoDate(monday), endIso=frlpIsoDate(sunday);
+    const turnosSemana=Object.values(turnosObj).filter(function(t){
+      return t.data>=startIso && t.data<=endIso && (t.unidade||'Cali Cravings')===unidade;
+    });
+    const turnosHoje=turnosSemana.filter(function(t){return t.data===hoje;});
+    const flHojeSet={};
+    turnosHoje.forEach(function(t){ flHojeSet[t.freelancerId]=true; });
+    const totalCadastrados=Object.keys(freelancersObj).length;
+    const diasPonto=Object.values(pontoObj).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+    const diaHojePonto=diasPonto.find(function(d){return d.data===hoje;});
+    const ocorrenciasHoje=(diaHojePonto && diaHojePonto.acessoOk!==false) ? (diaHojePonto.ocorrencias||[]).length : null;
+    const nomeFl=function(id){ return (freelancersObj[id]&&freelancersObj[id].nome) || 'Freelancer'; };
+    const listaHojeHtml=turnosHoje.length ? turnosHoje.map(function(t){
+      return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(nomeFl(t.freelancerId))+'</div><div class="prod-qtd">'+escapeHtml(t.entrada||'')+(t.saida?(' - '+escapeHtml(t.saida)):'')+'</div></div>';
+    }).join('') : '<div class="empty-msg">Nenhum freelancer lançado hoje</div>';
+    body.innerHTML=
+      '<div class="kpi-row">'+
+        '<div class="kpi-card"><div class="kpi-l">Freelancers hoje</div><div class="kpi-v">'+Object.keys(flHojeSet).length+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Turnos esta semana</div><div class="kpi-v">'+turnosSemana.length+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Freelancers cadastrados</div><div class="kpi-v">'+totalCadastrados+'</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">Ocorrências ponto hoje</div><div class="kpi-v">'+(ocorrenciasHoje===null?'—':ocorrenciasHoje)+'</div></div>'+
+      '</div>'+
+      '<div class="sec-l">Freelancers de hoje</div>'+
+      '<div class="prod-list">'+listaHojeHtml+'</div>';
+  }).catch(function(){ body.innerHTML='<div class="empty-msg">Não foi possível carregar a equipe agora.</div>'; });
+}
+function renderHomeTabAoVivo(body){
+  body.innerHTML=
+    '<div class="card" style="text-align:center;padding:28px 18px">'+
+      '<div style="font-size:28px;margin-bottom:10px">🔄</div>'+
+      '<div style="font-weight:700;margin-bottom:6px">Painel ao vivo</div>'+
+      '<div style="font-size:13px;color:var(--tx2);margin-bottom:16px">Pedidos, requisições e estoque em tempo real</div>'+
+      '<button class="btn-or" style="width:auto;padding:10px 20px" onclick="goTo(\'s-painel-vivo\')">Abrir painel completo</button>'+
+    '</div>';
+}
+function renderHome(){
+  const perfil=sessionStorage.getItem('perfilAtivo');
+  const unidade=getUnidadeAtual();
+  const badge=document.getElementById('home-unidade-badge');
+  if(badge) badge.textContent=unidade;
+  if(perfil!=='master' && perfil!=='gerente'){
+    goTo('s-unidade');
+    return;
+  }
+  homeTabAtual='visao';
+  renderHomeTabsBar(perfil);
+  renderHomeTabConteudo(perfil);
 }
 
 /* ================= SLUGIFY ================= */
