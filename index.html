@@ -79,6 +79,10 @@ body.tema-cali .hdr{background:var(--hd)}
 .unit-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:18px 20px;display:flex;align-items:center;gap:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .unit-card:active{background:var(--surf2)}
 .unit-ico{width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.unit-ico-wrap{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.unit-ico-wrap.cali{background:var(--gr-l)}
+.unit-ico-wrap.texas{background:#fbe6e6}
+.unit-chev{margin-left:auto;color:var(--tx3);font-size:20px;flex-shrink:0}
 .brand-badge-img{width:64px;height:64px;border-radius:50%;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.18)}
 .unit-card-lb{font-size:16px;font-weight:700;text-align:left}
 .unit-card-sub{font-size:12px;color:var(--tx2);text-align:left;margin-top:2px}
@@ -214,18 +218,20 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
     <h1>Para onde você quer gerenciar?</h1>
     <div class="unit-cards">
       <div class="unit-card" onclick="escolherUnidade('Cali Cravings')">
-        <img src="icon-cali.png" alt="Cali Cravings" class="unit-ico">
+        <div class="unit-ico-wrap cali"><img src="icon-cali.png" alt="Cali Cravings" class="unit-ico"></div>
         <div>
           <div class="unit-card-lb">Cali Cravings</div>
           <div class="unit-card-sub">Gestão da unidade</div>
         </div>
+        <span class="unit-chev">›</span>
       </div>
       <div class="unit-card" onclick="escolherUnidade('Texas Country Bar')">
-        <img src="icon-texas.png" alt="Texas Country Bar" class="unit-ico">
+        <div class="unit-ico-wrap texas"><img src="icon-texas.png" alt="Texas Country Bar" class="unit-ico"></div>
         <div>
           <div class="unit-card-lb">Texas Country Bar</div>
           <div class="unit-card-sub">Gestão da unidade</div>
         </div>
+        <span class="unit-chev">›</span>
       </div>
     </div>
   </div>
