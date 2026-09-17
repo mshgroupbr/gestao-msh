@@ -218,6 +218,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .cat-bar-row{margin-bottom:10px}
 .cat-bar-track{height:6px;background:var(--surf2);border-radius:3px;margin-top:4px}
 .cat-bar-fill{height:6px;background:var(--or);border-radius:3px}
+.nf-summary{font-size:13px;color:var(--tx3);margin:6px 2px 10px;font-weight:600}
+.nf-cat-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.nf-cat-select{font-size:12px;padding:5px 8px;border-radius:8px;border:1px solid var(--bd);background:#fff;color:var(--tx2)}
 </style>
 </head>
 <body>
@@ -348,10 +351,22 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 <div class="screen" id="s-notas-fiscais">
   <div class="hdr">
     <button class="back" onclick="goTo('s-home')">‹</button>
-    <div class="htxt"><h1>Notas Fiscais</h1><p>Bar · atualiza custo real dos ingredientes</p></div>
+    <div class="htxt"><h1>Notas Fiscais</h1><p>Compras por categoria · Bar vincula custo real</p></div>
   </div>
+  <div class="home-tabs" id="nf-tabs"></div>
   <div class="body">
     <div class="card">
+      <div class="field">
+        <label class="fl">Categoria</label>
+        <select id="nf-form-categoria">
+          <option value="secos">Secos</option>
+          <option value="limpeza">Limpeza</option>
+          <option value="hortifruti">Hortifruti</option>
+          <option value="bar">Bar</option>
+          <option value="proteinas">Proteínas</option>
+          <option value="outros">Outros</option>
+        </select>
+      </div>
       <div class="field">
         <label class="fl">Data</label>
         <input type="date" id="nf-form-data">
@@ -388,6 +403,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
       </div>
       <button class="btn-or" onclick="salvarNotaFiscal()">＋ Lançar nota fiscal</button>
     </div>
+    <div class="nf-summary" id="notas-fiscais-summary"></div>
     <div id="notas-fiscais-list"></div>
   </div>
 </div>
@@ -2099,6 +2115,7 @@ function converterParaUnidadeBaseNF(qtd, unidade){
 }
 function salvarNotaFiscal(){
   const data = document.getElementById('nf-form-data').value;
+  const categoria = document.getElementById('nf-form-categoria').value || 'outros';
   const fornecedor = (document.getElementById('nf-form-fornecedor').value||'').trim();
   const item = (document.getElementById('nf-form-item').value||'').trim();
   const ingredienteKey = document.getElementById('nf-form-ingrediente').value;
@@ -2115,6 +2132,7 @@ function salvarNotaFiscal(){
     fornecedor: fornecedor, item: item, ingredienteKey: ingredienteKey||null,
     qtd: qtd, unidade: unidade, qtdBase: conv.qtdBase, unidadeBase: conv.unidadeBase, valorTotal: valorTotal,
     valorUnitOriginal: valorTotal/qtd,
+    categoria: categoria, local: unidadeParaSlug(getUnidadeAtual()),
     criadoEm: Date.now()
   };
   NOTAS_FISCAIS_REF.push(registro).then(function(){
@@ -2130,12 +2148,30 @@ function salvarNotaFiscal(){
     document.getElementById('nf-form-valor').value='';
   });
 }
+let notaFiscalTabAtual = 'todas';
+const NF_CATEGORIAS = [['todas','Todas'],['proteinas','Proteínas'],['hortifruti','Hortifruti'],['bar','Bar'],['secos','Secos'],['limpeza','Limpeza'],['outros','Outros']];
+function renderNotasFiscaisTabsBar(){
+  const el = document.getElementById('nf-tabs');
+  if(!el) return;
+  el.innerHTML = NF_CATEGORIAS.map(function(c){
+    return '<button class="home-tab-btn'+(notaFiscalTabAtual===c[0]?' active':'')+'" onclick="selecionarNotaFiscalTab(\''+c[0]+'\')">'+c[1]+'</button>';
+  }).join('');
+}
+function selecionarNotaFiscalTab(tab){
+  notaFiscalTabAtual = tab;
+  renderNotasFiscaisTabsBar();
+  drawNotasFiscaisList();
+}
+function atualizarCategoriaNotaFiscal(key, novaCategoria){
+  NOTAS_FISCAIS_REF.child(key).update({categoria: novaCategoria});
+}
 function renderNotasFiscaisScreen(){
   if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
   const dataEl = document.getElementById('nf-form-data');
   if(dataEl && !dataEl.value) dataEl.value = new Date().toISOString().slice(0,10);
   carregarDadosBarSeNecessario();
   popularSelectIngredientesNF();
+  renderNotasFiscaisTabsBar();
   if(!notasFiscaisListenerBound){
     notasFiscaisListenerBound=true;
     NOTAS_FISCAIS_REF.on('value', function(snap){
@@ -2148,10 +2184,26 @@ function renderNotasFiscaisScreen(){
 }
 function drawNotasFiscaisList(){
   const list = document.getElementById('notas-fiscais-list');
+  const summaryEl = document.getElementById('notas-fiscais-summary');
   if(!list) return;
-  const entries = Object.entries(notasFiscaisCache);
+  const slugAtualNF = unidadeParaSlug(getUnidadeAtual());
+  let entries = Object.entries(notasFiscaisCache).filter(function(e){
+    const v = e[1];
+    const local = v.local || 'cali';
+    if(local !== slugAtualNF) return false;
+    if(notaFiscalTabAtual !== 'todas' && (v.categoria||'outros') !== notaFiscalTabAtual) return false;
+    return true;
+  });
+  if(summaryEl){
+    if(entries.length){
+      const totalVal = entries.reduce(function(s,e){ return s + (Number(e[1].valorTotal)||0); }, 0);
+      summaryEl.textContent = entries.length + (entries.length===1?' item · ':' itens · ') + fmtMoney(totalVal);
+    } else {
+      summaryEl.textContent = '';
+    }
+  }
   if(!entries.length){
-    list.innerHTML = '<div class="empty-msg">Nenhuma nota fiscal lançada ainda.</div>';
+    list.innerHTML = '<div class="empty-msg">Nenhuma nota fiscal nesta categoria.</div>';
     return;
   }
   entries.sort(function(a,b){ return (b[1].data||'').localeCompare(a[1].data||'') || (b[1].criadoEm||0)-(a[1].criadoEm||0); });
@@ -2165,7 +2217,12 @@ function drawNotasFiscaisList(){
         '<div class="ri-cost-block"><div class="ri-cost-l">Qtd</div><div class="ri-cost-v">'+v.qtd+' '+v.unidade+'</div></div>'+
         '<div class="ri-cost-block"><div class="ri-cost-l">Valor total</div><div class="ri-cost-v">'+fmtMoney(v.valorTotal)+'</div></div>'+
       '</div>'+
-      (ing ? '<div class="badge" style="background:#E8F5E9;color:#2E7D32">🔗 Vinculado a: '+escapeHtml(ing.nome)+'</div>' : '<div class="badge">Sem vínculo com ingrediente</div>')+
+      '<div class="nf-cat-row">'+
+        '<select class="nf-cat-select" onchange="atualizarCategoriaNotaFiscal(\''+k+'\', this.value)">'+
+          NF_CATEGORIAS.filter(function(c){return c[0]!=='todas';}).map(function(c){ return '<option value="'+c[0]+'"'+((v.categoria||'outros')===c[0]?' selected':'')+'>'+c[1]+'</option>'; }).join('')+
+        '</select>'+
+        (ing ? '<span class="badge" style="background:#E8F5E9;color:#2E7D32">🔗 '+escapeHtml(ing.nome)+'</span>' : '')+
+      '</div>'+
       '<div class="ger-actions"><button class="btn-sm danger" onclick="excluirNotaFiscal(\''+k+'\')">🗑️ Excluir</button></div>'+
     '</div>';
   });
