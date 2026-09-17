@@ -37,6 +37,9 @@ if('serviceWorker' in navigator){
   --gr:#1d9e75;--gr-l:#e1f5ee;
   --rd:#a32d2d;--rd-l:#fcebeb;
   --am:#b5720b;--am-l:#faeeda;
+  --bl:#185fa5;--bl-l:#e6f1fb;
+  --pu:#534ab7;--pu-l:#eeedfe;
+  --pk:#993556;--pk-l:#fbeaf0;
   --hd:#2C3E35;--r:14px;--rs:9px;
   --cali:#1d9e75;--texas:#7A1F1F;
 }
@@ -114,7 +117,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .admin-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:20px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;position:relative;min-height:104px}
 .admin-card:active{background:var(--surf2)}
 .admin-card.disabled{opacity:.5;cursor:not-allowed;pointer-events:none;background:var(--surf2)}
-.admin-ico{font-size:26px}
+.admin-ico{font-size:21px;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto}
 .admin-lb{font-size:13.5px;font-weight:700}
 .soon-badge{position:absolute;top:8px;right:8px;font-size:9.5px;font-weight:700;background:var(--tx3);color:#fff;padding:3px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.03em}
 
@@ -196,7 +199,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .quick-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:2px}
 .quick-stat-card{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:14px;text-align:center}
 .quick-stat-l{font-size:10.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
-.quick-stat-v{font-size:16px;font-weight:700}
+.quick-stat-v{font-size:20px;font-weight:700}
+.qs-ico{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;margin:0 auto 8px}
 </style>
 </head>
 <body>
@@ -651,34 +655,34 @@ function renderHome(){
   if(perfil==='master'){
     body.innerHTML=
       '<div class="welcome-txt">Gestão Master — '+unidade+'</div>'+
-      '<div class="admin-grid">'+
-        '<div class="admin-card" onclick="goTo(\'s-custos\')"><div class="admin-ico">💰</div><div class="admin-lb">Custos</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-notas-fiscais\')"><div class="admin-ico">🧾</div><div class="admin-lb">Notas Fiscais</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-gerentes\')"><div class="admin-ico">👥</div><div class="admin-lb">Gerentes</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-freelancers-panel\');renderFreelancersPanel()"><div class="admin-ico">📋</div><div class="admin-lb">Freelancers</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
-      '</div>'+
       '<div class="quick-stat-grid">'+
-        '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
-        '<div class="quick-stat-card"><div class="quick-stat-l">CMV hoje</div><div class="quick-stat-v" id="home-cmv-hoje">…</div></div>'+
+        '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--gr-l);color:var(--gr)">💵</div><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
+        '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--am-l);color:var(--am)">🧮</div><div class="quick-stat-l">CMV hoje</div><div class="quick-stat-v" id="home-cmv-hoje">…</div></div>'+
+      '</div>'+
+      '<div class="admin-grid">'+
+        '<div class="admin-card" onclick="goTo(\'s-custos\')"><div class="admin-ico" style="background:var(--am-l);color:var(--am)">💰</div><div class="admin-lb">Custos</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-notas-fiscais\')"><div class="admin-ico" style="background:var(--or-l);color:var(--or)">🧾</div><div class="admin-lb">Notas Fiscais</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-gerentes\')"><div class="admin-ico" style="background:var(--pu-l);color:var(--pu)">👥</div><div class="admin-lb">Gerentes</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico" style="background:var(--gr-l);color:var(--gr)">📊</div><div class="admin-lb">Importar Vendas</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico" style="background:var(--bl-l);color:var(--bl)">📈</div><div class="admin-lb">Relatórios</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico" style="background:var(--pk-l);color:var(--pk)">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-freelancers-panel\');renderFreelancersPanel()"><div class="admin-ico" style="background:var(--rd-l);color:var(--rd)">📋</div><div class="admin-lb">Freelancers</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico" style="background:var(--bl-l);color:var(--bl)">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
       '</div>';
     carregarHomeQuickStatsMaster();
   } else if(perfil==='gerente'){
     const nome=sessionStorage.getItem('gerenteNome')||'Gerente';
     body.innerHTML=
       '<div class="welcome-txt">Olá, '+nome+'! 👋<br><span style="font-weight:400;font-size:13px;opacity:.65">'+unidade+'</span></div>'+
-      '<div class="admin-grid">'+
-        '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico">📈</div><div class="admin-lb">Relatórios</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico">🌙</div><div class="admin-lb">Fechamento Noturno</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-freelancers-panel\');renderFreelancersPanel()"><div class="admin-ico">📋</div><div class="admin-lb">Freelancers</div></div>'+
-        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
-      '</div>'+
       '<div class="quick-stat-grid">'+
-        '<div class="quick-stat-card"><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
+        '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--gr-l);color:var(--gr)">💵</div><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
+      '</div>'+
+      '<div class="admin-grid">'+
+        '<div class="admin-card" onclick="goTo(\'s-relatorios\')"><div class="admin-ico" style="background:var(--bl-l);color:var(--bl)">📈</div><div class="admin-lb">Relatórios</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-vendas-import\')"><div class="admin-ico" style="background:var(--gr-l);color:var(--gr)">🌙</div><div class="admin-lb">Fechamento Noturno</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-painel-vivo\')"><div class="admin-ico" style="background:var(--pk-l);color:var(--pk)">🔄</div><div class="admin-lb">Painel ao vivo</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-freelancers-panel\');renderFreelancersPanel()"><div class="admin-ico" style="background:var(--rd-l);color:var(--rd)">📋</div><div class="admin-lb">Freelancers</div></div>'+
+        '<div class="admin-card" onclick="goTo(\'s-ponto\')"><div class="admin-ico" style="background:var(--am-l);color:var(--am)">🕐</div><div class="admin-lb">Ponto / Frequência</div></div>'+
       '</div>';
     carregarHomeQuickStatsGerente();
   } else {
