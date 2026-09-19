@@ -352,6 +352,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
   <div class="hdr">
     <button class="back" onclick="goTo('s-home')">‹</button>
     <div class="htxt"><h1>Notas Fiscais</h1><p>Compras por categoria · Bar vincula custo real</p></div>
+    <button onclick="goTo('s-notas-analise');renderNotasAnaliseScreen()" style="margin-left:auto;background:rgba(255,255,255,.12);border:none;color:#fff;padding:8px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">📊 Análise</button>
   </div>
   <div class="home-tabs" id="nf-tabs"></div>
   <div class="body">
@@ -405,6 +406,64 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
     </div>
     <div class="nf-summary" id="notas-fiscais-summary"></div>
     <div id="notas-fiscais-list"></div>
+  </div>
+</div>
+<!-- ANALISE DE COMPRAS (master only) -->
+<div class="screen" id="s-notas-analise">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-notas-fiscais')">‹</button>
+    <div class="htxt"><h1>Análise de Compras</h1><p>Por período, categoria e fornecedor</p></div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <div class="field">
+        <label class="fl">Unidade</label>
+        <select id="na-unidade" onchange="atualizarGraficosNotas()">
+          <option value="todas">Todas</option>
+          <option value="Cali Cravings">Cali Cravings</option>
+          <option value="Texas Country Bar">Texas Country Bar</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="fl">Categoria</label>
+        <select id="na-categoria" onchange="atualizarGraficosNotas()">
+          <option value="todas">Todas</option>
+          <option value="secos">Secos</option>
+          <option value="limpeza">Limpeza</option>
+          <option value="hortifruti">Hortifruti</option>
+          <option value="bar">Bar</option>
+          <option value="proteinas">Proteínas</option>
+          <option value="outros">Outros</option>
+        </select>
+      </div>
+      <div class="period-btns" id="na-period-btns">
+        <button class="period-btn" data-period="30" onclick="selecionarPeriodoNotas('30')">30 dias</button>
+        <button class="period-btn" data-period="90" onclick="selecionarPeriodoNotas('90')">90 dias</button>
+        <button class="period-btn" data-period="tudo" onclick="selecionarPeriodoNotas('tudo')">Tudo</button>
+      </div>
+      <div class="date-range-row">
+        <input type="date" id="na-de">
+        <input type="date" id="na-ate">
+      </div>
+      <button class="btn-or" onclick="atualizarGraficosNotas()" style="margin-top:10px">🔍 Aplicar filtro</button>
+    </div>
+    <div class="dash-grid">
+      <div class="dash-card"><div class="dash-card-l">Total gasto</div><div class="dash-card-v" id="na-total">R$ 0,00</div></div>
+      <div class="dash-card"><div class="dash-card-l">Nº de notas</div><div class="dash-card-v" id="na-count">0</div></div>
+      <div class="dash-card"><div class="dash-card-l">Ticket médio</div><div class="dash-card-v" id="na-ticket">R$ 0,00</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-l">Evolução do gasto no período</div>
+      <canvas id="chart-notas-evolucao" height="220"></canvas>
+    </div>
+    <div class="card">
+      <div class="sec-l">Gasto por categoria</div>
+      <canvas id="chart-notas-categoria" height="220"></canvas>
+    </div>
+    <div class="card">
+      <div class="sec-l">Top 10 fornecedores</div>
+      <canvas id="chart-notas-fornecedor" height="280"></canvas>
+    </div>
   </div>
 </div>
 
@@ -547,6 +606,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
 /* ================= FIREBASE ================= */
 firebase.initializeApp({
@@ -2165,6 +2225,126 @@ function selecionarNotaFiscalTab(tab){
 function atualizarCategoriaNotaFiscal(key, novaCategoria){
   NOTAS_FISCAIS_REF.child(key).update({categoria: novaCategoria});
 }
+const CORES_CATEGORIA_NF = {secos:'#C9A227', limpeza:'#2E86AB', hortifruti:'#1d9e75', bar:'#7B2CBF', proteinas:'#a32d2d', outros:'#8a8a86'};
+const CORES_UNIDADE_NF = {'Cali Cravings':'#1d9e75', 'Texas Country Bar':'#a32d2d'};
+const CHARTS_NOTAS = {};
+function destruirChartNotas(key){ if(CHARTS_NOTAS[key]){ CHARTS_NOTAS[key].destroy(); delete CHARTS_NOTAS[key]; } }
+function isoWeekKeyNF(dataStr){
+  const d = new Date(dataStr+'T00:00:00');
+  const dia = (d.getDay()+6)%7;
+  d.setDate(d.getDate()-dia);
+  return formatDateLocal(d);
+}
+function selecionarPeriodoNotas(p){
+  document.querySelectorAll('#na-period-btns .period-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
+  const hoje = new Date();
+  const deEl = document.getElementById('na-de');
+  const ateEl = document.getElementById('na-ate');
+  if(p==='30' || p==='90'){
+    const n = Number(p);
+    const d = new Date(hoje); d.setDate(d.getDate()-(n-1));
+    deEl.value = formatDateLocal(d);
+    ateEl.value = formatDateLocal(hoje);
+  } else if(p==='tudo'){
+    deEl.value = '2026-01-01';
+    ateEl.value = formatDateLocal(hoje);
+  }
+  atualizarGraficosNotas();
+}
+function renderNotasAnaliseScreen(){
+  if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
+  const deEl = document.getElementById('na-de');
+  const ateEl = document.getElementById('na-ate');
+  if(deEl && !deEl.value){
+    const hoje = new Date();
+    const d = new Date(hoje); d.setDate(d.getDate()-29);
+    deEl.value = formatDateLocal(d);
+    ateEl.value = formatDateLocal(hoje);
+    const btn30 = document.querySelector('#na-period-btns .period-btn[data-period="30"]');
+    if(btn30) btn30.classList.add('active');
+  }
+  if(!notasFiscaisListenerBound){
+    notasFiscaisListenerBound=true;
+    NOTAS_FISCAIS_REF.on('value', function(snap){
+      notasFiscaisCache = snap.val()||{};
+      if(document.getElementById('notas-fiscais-list')) drawNotasFiscaisList();
+      if(document.getElementById('chart-notas-evolucao')) atualizarGraficosNotas();
+    });
+  } else {
+    atualizarGraficosNotas();
+  }
+}
+function atualizarGraficosNotas(){
+  if(typeof Chart==='undefined') return;
+  const unidadeSel = document.getElementById('na-unidade').value;
+  const categoriaSel = document.getElementById('na-categoria').value;
+  const de = document.getElementById('na-de').value;
+  const ate = document.getElementById('na-ate').value;
+  const localSel = unidadeSel==='todas' ? null : unidadeParaSlug(unidadeSel);
+  const entries = Object.values(notasFiscaisCache).filter(function(v){
+    if(localSel && (v.local||'cali')!==localSel) return false;
+    if(categoriaSel!=='todas' && (v.categoria||'outros')!==categoriaSel) return false;
+    if(de && v.data < de) return false;
+    if(ate && v.data > ate) return false;
+    return true;
+  });
+  const total = entries.reduce(function(s,e){ return s+(Number(e.valorTotal)||0); },0);
+  const count = entries.length;
+  const ticket = count ? total/count : 0;
+  document.getElementById('na-total').textContent = fmtMoney(total);
+  document.getElementById('na-count').textContent = count;
+  document.getElementById('na-ticket').textContent = fmtMoney(ticket);
+  const CATS = ['secos','limpeza','hortifruti','bar','proteinas','outros'];
+  const CAT_LABELS = {secos:'Secos',limpeza:'Limpeza',hortifruti:'Hortifruti',bar:'Bar',proteinas:'Proteínas',outros:'Outros'};
+  const porCategoria = {};
+  CATS.forEach(function(c){ porCategoria[c]=0; });
+  entries.forEach(function(e){ const c = e.categoria||'outros'; porCategoria[c] = (porCategoria[c]||0)+(Number(e.valorTotal)||0); });
+  destruirChartNotas('categoria');
+  CHARTS_NOTAS['categoria'] = new Chart(document.getElementById('chart-notas-categoria').getContext('2d'), {
+    type:'bar',
+    data:{ labels: CATS.map(function(c){ return CAT_LABELS[c]; }), datasets:[{ label:'Gasto', data: CATS.map(function(c){ return Math.round(porCategoria[c]*100)/100; }), backgroundColor: CATS.map(function(c){ return CORES_CATEGORIA_NF[c]; }) }] },
+    options:{ responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+  });
+  const porFornecedor = {};
+  entries.forEach(function(e){ const f = e.fornecedor||'—'; porFornecedor[f] = (porFornecedor[f]||0)+(Number(e.valorTotal)||0); });
+  const topFornecedores = Object.entries(porFornecedor).sort(function(a,b){ return b[1]-a[1]; }).slice(0,10);
+  destruirChartNotas('fornecedor');
+  CHARTS_NOTAS['fornecedor'] = new Chart(document.getElementById('chart-notas-fornecedor').getContext('2d'), {
+    type:'bar',
+    data:{ labels: topFornecedores.map(function(e){ return e[0].length>28 ? e[0].slice(0,26)+'…' : e[0]; }), datasets:[{ label:'Gasto', data: topFornecedores.map(function(e){ return Math.round(e[1]*100)/100; }), backgroundColor:'#C9A227' }] },
+    options:{ indexAxis:'y', responsive:true, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+  });
+  const agruparSemana = (function(){ const set={}; entries.forEach(function(e){ if(e.data) set[e.data]=true; }); return Object.keys(set).length>40; })();
+  const chaveSet = {};
+  entries.forEach(function(e){ if(e.data){ const k = agruparSemana ? isoWeekKeyNF(e.data) : e.data; chaveSet[k]=true; } });
+  const chaves = Object.keys(chaveSet).sort();
+  function somaChave(chave, slugFiltro){
+    return entries.filter(function(e){
+      if(!e.data) return false;
+      const k = agruparSemana ? isoWeekKeyNF(e.data) : e.data;
+      if(k!==chave) return false;
+      if(slugFiltro && (e.local||'cali')!==slugFiltro) return false;
+      return true;
+    }).reduce(function(s,e){ return s+(Number(e.valorTotal)||0); },0);
+  }
+  const usarUnidades = unidadeSel==='todas';
+  const UNIDADES_NF = ['Cali Cravings','Texas Country Bar'];
+  destruirChartNotas('evolucao');
+  let datasetsEvolucao;
+  if(usarUnidades){
+    datasetsEvolucao = UNIDADES_NF.map(function(u){
+      const slug = unidadeParaSlug(u);
+      return { label:u, data: chaves.map(function(k){ return Math.round(somaChave(k,slug)*100)/100; }), borderColor: CORES_UNIDADE_NF[u], backgroundColor: CORES_UNIDADE_NF[u], tension:0.25, fill:false };
+    });
+  } else {
+    datasetsEvolucao = [{ label:unidadeSel, data: chaves.map(function(k){ return Math.round(somaChave(k,null)*100)/100; }), borderColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', backgroundColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', tension:0.25, fill:false }];
+  }
+  CHARTS_NOTAS['evolucao'] = new Chart(document.getElementById('chart-notas-evolucao').getContext('2d'), {
+    type:'line',
+    data:{ labels: chaves.map(function(k){ return isoParaBRNF(k); }), datasets: datasetsEvolucao },
+    options:{ responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}} }
+  });
+}
 function renderNotasFiscaisScreen(){
   if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
   const dataEl = document.getElementById('nf-form-data');
@@ -2176,7 +2356,8 @@ function renderNotasFiscaisScreen(){
     notasFiscaisListenerBound=true;
     NOTAS_FISCAIS_REF.on('value', function(snap){
       notasFiscaisCache = snap.val()||{};
-      drawNotasFiscaisList();
+      if(document.getElementById('notas-fiscais-list')) drawNotasFiscaisList();
+      if(document.getElementById('chart-notas-evolucao')) atualizarGraficosNotas();
     });
   } else {
     drawNotasFiscaisList();
