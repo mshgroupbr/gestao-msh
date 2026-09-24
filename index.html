@@ -744,9 +744,9 @@ function loginGerente(){
 /* ================= HOME (abas) ================= */
 let homeTabAtual='visao';
 function homeTabsDisponiveis(perfil){
-  return perfil==='master'
-    ? [['visao','Visão geral'],['vendas','Vendas'],['custos','Custos'],['equipe','Equipe'],['aovivo','Ao vivo']]
-    : [['visao','Visão geral'],['vendas','Vendas'],['equipe','Equipe'],['aovivo','Ao vivo']];
+return perfil==='master'
+? [['visao','Visão geral'],['vendas','Vendas'],['custos','Custos'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']]
+: [['visao','Visão geral'],['vendas','Vendas'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']];
 }
 function renderHomeTabsBar(perfil){
   const tabsEl=document.getElementById('home-tabs');
@@ -769,6 +769,7 @@ function renderHomeTabConteudo(perfil){
   if(homeTabAtual==='vendas') return renderHomeTabVendas(perfil, body);
   if(homeTabAtual==='custos' && perfil==='master') return renderHomeTabCustos(body);
   if(homeTabAtual==='equipe') return renderHomeTabEquipe(perfil, body);
+if(homeTabAtual==='checklist') return renderHomeTabChecklist(perfil, body);
   if(homeTabAtual==='aovivo') return renderHomeTabAoVivo(body);
   return renderHomeTabVisao(perfil, body);
 }
@@ -961,6 +962,58 @@ function renderHomeTabEquipe(perfil, body){
       '<div class="prod-list">'+listaHojeHtml+'</div>';
   }).catch(function(){ body.innerHTML='<div class="empty-msg">Não foi possível carregar a equipe agora.</div>'; });
 }
+
+function renderHomeTabChecklist(perfil, body){
+body.innerHTML=
+'<div class="card" style="margin-bottom:16px">'+
+'<div class="sec-l" style="margin-bottom:6px">Importar relatório do Checklist</div>'+
+'<p style="font-size:12.5px;color:var(--muted,#8a8378);margin-bottom:10px">No app de Checklist: Gestão → Pontos → escolha a data → "Baixar relatório do dia". Depois importe o arquivo aqui.</p>'+
+'<input type="file" accept="application/json" id="checklist-file-input" onchange="handleChecklistFileUpload(event)">'+
+'</div>'+
+'<div id="checklist-resultado"></div>';
+if(window.__ultimoRelatorioChecklist){ renderChecklistResultado(window.__ultimoRelatorioChecklist); }
+else { document.getElementById('checklist-resultado').innerHTML='<div class="empty-msg">Nenhum relatório importado ainda.</div>'; }
+}
+
+function handleChecklistFileUpload(ev){
+var file = ev.target.files && ev.target.files[0];
+if(!file) return;
+var reader = new FileReader();
+reader.onload = function(e){
+try{
+var data = JSON.parse(e.target.result);
+if(!data || !Array.isArray(data.colaboradores)) throw new Error('formato invalido');
+window.__ultimoRelatorioChecklist = data;
+renderChecklistResultado(data);
+}catch(err){
+var con=document.getElementById('checklist-resultado');
+if(con) con.innerHTML='<div class="empty-msg">Arquivo inválido. Baixe o relatório direto do app de Checklist (Gestão → Pontos).</div>';
+}
+};
+reader.readAsText(file);
+}
+
+function renderChecklistResultado(data){
+var con=document.getElementById('checklist-resultado');
+if(!con) return;
+var linhas=(data.colaboradores||[]).slice().sort(function(a,b){ return a.percentual-b.percentual; });
+var completos=linhas.filter(function(l){ return l.percentual>=100; }).length;
+var total=linhas.length;
+var rowsHtml=linhas.length ? linhas.map(function(l){
+var cor = l.percentual>=100 ? '#2E7D32' : (l.percentual>=50 ? '#B8860B' : '#B23A3A');
+return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(l.nome||l.email||'')+' <span style="color:var(--muted,#8a8378);font-size:11.5px">('+escapeHtml(l.turno||'')+')</span></div>'+
+'<div class="prod-qtd" style="color:'+cor+';font-weight:700">'+l.percentual+'% <span style="font-weight:400;color:var(--muted,#8a8378)">('+l.concluidas+'/'+l.atribuidas+')</span></div></div>';
+}).join('') : '<div class="empty-msg">Nenhum colaborador nesse relatório.</div>';
+con.innerHTML=
+'<div class="kpi-row">'+
+'<div class="kpi-card"><div class="kpi-l">Unidade</div><div class="kpi-v" style="font-size:16px">'+escapeHtml(data.unidade||'-')+'</div></div>'+
+'<div class="kpi-card"><div class="kpi-l">Data</div><div class="kpi-v" style="font-size:16px">'+escapeHtml(data.data||'-')+'</div></div>'+
+'<div class="kpi-card"><div class="kpi-l">100% concluído</div><div class="kpi-v">'+completos+'/'+total+'</div></div>'+
+'</div>'+
+'<div class="sec-l">Cumprimento por colaborador</div>'+
+'<div class="prod-list">'+rowsHtml+'</div>';
+}
+
 function renderHomeTabAoVivo(body){
   body.innerHTML=
     '<div class="card" style="text-align:center;padding:28px 18px">'+
