@@ -1007,7 +1007,7 @@ return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(l.nome||l.ema
 con.innerHTML=
 '<div class="kpi-row">'+
 '<div class="kpi-card"><div class="kpi-l">Unidade</div><div class="kpi-v" style="font-size:16px">'+escapeHtml(data.unidade||'-')+'</div></div>'+
-'<div class="kpi-card"><div class="kpi-l">Data</div><div class="kpi-v" style="font-size:16px">'+escapeHtml(data.data||'-')+'</div></div>'+
+'<div class="kpi-card"><div class="kpi-l">Per\u00edodo</div><div class="kpi-v" style="font-size:14px">'+escapeHtml(data.dataInicio ? (data.dataInicio + (data.dataFim && data.dataFim!==data.dataInicio ? ' a '+data.dataFim : '')) : (data.data||'-'))+(data.dias?('<div style="font-size:11px;color:var(--muted,#8a8378);margin-top:2px">'+data.dias+' dia'+(data.dias>1?'s':'')+'</div>'):'')+'</div></div>'+
 '<div class="kpi-card"><div class="kpi-l">100% concluído</div><div class="kpi-v">'+completos+'/'+total+'</div></div>'+
 '</div>'+
 '<div class="sec-l">Cumprimento por colaborador</div>'+
