@@ -2327,7 +2327,7 @@ function renderNotasAnaliseScreen(){
     atualizarGraficosNotas();
   }
 }
-function atualizarGraficosNotas(){
+async function atualizarGraficosNotas(){
   if(typeof Chart==='undefined') return;
   const unidadeSel = document.getElementById('na-unidade').value;
   const categoriaSel = document.getElementById('na-categoria').value;
@@ -2381,22 +2381,48 @@ function atualizarGraficosNotas(){
     }).reduce(function(s,e){ return s+(Number(e.valorTotal)||0); },0);
   }
   const usarUnidades = unidadeSel==='todas';
-  const UNIDADES_NF = ['Cali Cravings','Texas Country Bar'];
-  destruirChartNotas('evolucao');
-  let datasetsEvolucao;
-  if(usarUnidades){
-    datasetsEvolucao = UNIDADES_NF.map(function(u){
-      const slug = unidadeParaSlug(u);
-      return { label:u, data: chaves.map(function(k){ return Math.round(somaChave(k,slug)*100)/100; }), borderColor: CORES_UNIDADE_NF[u], backgroundColor: CORES_UNIDADE_NF[u], tension:0.25, fill:false };
-    });
-  } else {
-    datasetsEvolucao = [{ label:unidadeSel, data: chaves.map(function(k){ return Math.round(somaChave(k,null)*100)/100; }), borderColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', backgroundColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', tension:0.25, fill:false }];
-  }
-  CHARTS_NOTAS['evolucao'] = new Chart(document.getElementById('chart-notas-evolucao').getContext('2d'), {
-    type:'line',
-    data:{ labels: chaves.map(function(k){ return isoParaBRNF(k); }), datasets: datasetsEvolucao },
-    options:{ responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}} }
-  });
+const UNIDADES_NF = ['Cali Cravings','Texas Country Bar'];
+destruirChartNotas('evolucao');
+let datasetsEvolucao;
+if(usarUnidades){
+datasetsEvolucao = UNIDADES_NF.map(function(u){
+const slug = unidadeParaSlug(u);
+return { label:u, data: chaves.map(function(k){ return Math.round(somaChave(k,slug)*100)/100; }), borderColor: CORES_UNIDADE_NF[u], backgroundColor: CORES_UNIDADE_NF[u], tension:0.25, fill:false };
+});
+} else {
+datasetsEvolucao = [{ label:unidadeSel, data: chaves.map(function(k){ return Math.round(somaChave(k,null)*100)/100; }), borderColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', backgroundColor: CORES_UNIDADE_NF[unidadeSel]||'#C9A227', tension:0.25, fill:false }];
+}
+
+function diasDaChaveNF(chave){
+if(!agruparSemana) return [chave];
+const base = new Date(chave+'T00:00:00');
+const arr=[];
+for(let i=0;i<7;i++){ const d=new Date(base); d.setDate(base.getDate()+i); arr.push(formatDateLocal(d)); }
+return arr;
+}
+function somaVendasChaveNF(chave, slug){
+const dias = diasDaChaveNF(chave);
+return Promise.all(dias.map(function(d){
+return VENDAS_REF.child(slug).child(d).once('value').then(function(snap){
+const obj = snap.val()||{};
+return Object.values(obj).reduce(function(s,row){ return s+(Number(row && row.vLiquida)||0); },0);
+});
+})).then(function(vals){ return vals.reduce(function(s,v){ return s+v; },0); });
+}
+const CORES_VENDAS_NF = {'Cali Cravings':'#2b7fd1', 'Texas Country Bar':'#c9932a'};
+const unidadesVendasNF = usarUnidades ? UNIDADES_NF : [unidadeSel];
+const datasetsVendas = await Promise.all(unidadesVendasNF.map(async function(u){
+const slug = unidadeParaSlug(u);
+const valores = await Promise.all(chaves.map(function(k){ return somaVendasChaveNF(k, slug); }));
+return { label:'Vendas '+u, data: valores.map(function(v){ return Math.round(v*100)/100; }), borderColor: CORES_VENDAS_NF[u]||'#2b7fd1', backgroundColor: CORES_VENDAS_NF[u]||'#2b7fd1', borderDash:[6,4], tension:0.25, fill:false };
+}));
+datasetsEvolucao = datasetsEvolucao.concat(datasetsVendas);
+
+CHARTS_NOTAS['evolucao'] = new Chart(document.getElementById('chart-notas-evolucao').getContext('2d'), {
+type:'line',
+data:{ labels: chaves.map(function(k){ return isoParaBRNF(k); }), datasets: datasetsEvolucao },
+options:{ responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true}} }
+});
 }
 function renderNotasFiscaisScreen(){
   if(sessionStorage.getItem('perfilAtivo')!=='master'){ goTo('s-home'); return; }
