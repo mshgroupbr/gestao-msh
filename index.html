@@ -221,11 +221,40 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 .nf-summary{font-size:13px;color:var(--tx3);margin:6px 2px 10px;font-weight:600}
 .nf-cat-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
 .nf-cat-select{font-size:12px;padding:5px 8px;border-radius:8px;border:1px solid var(--bd);background:#fff;color:var(--tx2)}
+
+/* ===== MODO COMPUTADOR ===== */
+#modebar{display:flex;justify-content:flex-end;padding:6px 12px;background:var(--bg)}
+.modeseg{display:inline-flex;border:.5px solid var(--bdr2);border-radius:20px;overflow:hidden;background:var(--surf)}
+.modeseg button{border:none;background:none;padding:3px 13px;font-size:15px;cursor:pointer;line-height:1.4;opacity:.5;font-family:inherit}
+.modeseg button.on{background:var(--surf2);opacity:1;box-shadow:inset 0 0 0 1.5px var(--hd)}
+#side{display:none}
+body.desk #side{display:flex;position:fixed;left:0;top:0;bottom:0;width:248px;background:var(--hd);color:#fff;flex-direction:column;padding:20px 12px;gap:4px;z-index:30;overflow-y:auto}
+body.desk.tema-texas #side{background:var(--texas)}
+body.desk.no-side #side{display:none}
+body.desk #app{max-width:none;margin:0;padding-left:248px}
+body.desk.no-side #app{padding-left:0}
+.side-brand{display:flex;align-items:center;gap:10px;padding:2px 8px 16px;border-bottom:1px solid rgba(255,255,255,.15);margin-bottom:10px}
+.side-brand b{font-size:15px}
+.side-brand small{display:block;opacity:.6;font-size:12px}
+.side-brand .hico{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.side-it{display:flex;align-items:center;gap:10px;background:none;border:none;color:rgba(255,255,255,.82);padding:11px 12px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;text-align:left;width:100%;font-family:inherit}
+.side-it:hover{background:rgba(255,255,255,.12)}
+.side-it.on{background:rgba(255,255,255,.22);color:#fff;font-weight:600}
+.side-ic{font-size:18px;width:24px;text-align:center;flex-shrink:0}
+.side-foot{margin-top:auto;padding-top:12px;border-top:1px solid rgba(255,255,255,.15);display:flex;flex-direction:column;gap:4px}
+.side-unit{font-size:12px;opacity:.65;padding:0 12px 6px}
+body.desk .screen>.body{width:100%;max-width:1180px;margin:0 auto;padding:24px 32px 48px}
+body.desk .hdr{padding-left:32px;padding-right:32px}
+body.desk .home-tabs{padding-left:32px;padding-right:32px}
+body.desk .admin-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+body.desk #toast{left:calc(50% + 124px)}
+body.desk.no-side #toast{left:50%}
 </style>
 </head>
 <body>
 
 <div id="app">
+<div id="modebar"><div class="modeseg"><button id="mode-m" onclick="setModoTela('mobile')" title="Modo celular">📱</button><button id="mode-d" onclick="setModoTela('desktop')" title="Modo computador">🖥️</button></div></div>
 
 <!-- 1. UNIDADE -->
 <div class="screen active" id="s-unidade">
@@ -602,6 +631,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 
 
 </div>
 
+<div id="side"></div>
+
 <div id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -658,6 +689,7 @@ function goTo(id){
   if(id==='s-relatorios') renderRelatoriosScreen();
   if(id==='s-painel-vivo') renderPainelVivoScreen();
   if(id==='s-ponto') renderPontoScreen();
+  atualizarLayoutTela(id);
 }
 function irLoginMaster(){
   document.getElementById('master-senha').value='';
@@ -2589,6 +2621,51 @@ function baixarFechamentoFinanceiro(slug, dia){
     a.remove();
   });
 }
+
+/* ================= MODO CELULAR / COMPUTADOR ================= */
+var SIDE_MASTER = [['s-home','🏠','Início'],['s-custos','💰','Custos'],['s-notas-fiscais','🧾','Notas Fiscais'],['s-gerentes','👥','Gerentes'],['s-vendas-import','📊','Importar Vendas'],['s-relatorios','📈','Relatórios'],['s-painel-vivo','🔄','Painel ao vivo'],['s-freelancers-panel','📋','Freelancers'],['s-ponto','🕐','Ponto / Frequência']];
+var SIDE_GERENTE = [['s-home','🏠','Início'],['s-vendas-import','🌙','Fechamento Noturno']];
+var TELAS_SEM_MENU = ['s-unidade','s-perfil','s-login-master','s-login-gerente'];
+function modoTelaAtual(){
+  let m = null; try{ m = localStorage.getItem('modoTela'); }catch(e){}
+  if(m==='desktop' || m==='mobile') return m;
+  return window.innerWidth >= 1000 ? 'desktop' : 'mobile';
+}
+function aplicarModoTela(){
+  const m = modoTelaAtual();
+  document.body.classList.toggle('desk', m==='desktop');
+  const a = document.getElementById('mode-m'), b = document.getElementById('mode-d');
+  if(a) a.classList.toggle('on', m==='mobile');
+  if(b) b.classList.toggle('on', m==='desktop');
+}
+function setModoTela(m){
+  try{ localStorage.setItem('modoTela', m); }catch(e){}
+  aplicarModoTela();
+  setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 60);
+}
+function sideGo(id){
+  goTo(id);
+  if(id==='s-freelancers-panel') renderFreelancersPanel();
+}
+function renderSide(){
+  const el = document.getElementById('side'); if(!el) return;
+  const p = sessionStorage.getItem('perfilAtivo');
+  const itens = p==='master' ? SIDE_MASTER : (p==='gerente' ? SIDE_GERENTE : []);
+  const nome = p==='gerente' ? (sessionStorage.getItem('gerenteNome') || 'Gerente') : (p==='master' ? 'Master' : '');
+  el.innerHTML = '<div class="side-brand"><div class="hico">MG</div><div><b>Masha Group</b><small>Gestão</small></div></div>' +
+    itens.map(function(it){ return '<button class="side-it" data-s="'+it[0]+'" onclick="sideGo(\''+it[0]+'\')"><span class="side-ic">'+it[1]+'</span> '+it[2]+'</button>'; }).join('') +
+    '<div class="side-foot"><div class="side-unit">'+getUnidadeAtual()+(nome ? ' · '+nome : '')+'</div>' +
+    '<button class="side-it" onclick="sair()"><span class="side-ic">🚪</span> Trocar unidade / Sair</button></div>';
+}
+function atualizarLayoutTela(id){
+  document.body.classList.toggle('no-side', TELAS_SEM_MENU.indexOf(id) >= 0);
+  renderSide();
+  const act = ({'s-notas-analise':'s-notas-fiscais'})[id] || id;
+  document.querySelectorAll('#side .side-it').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-s')===act); });
+}
+aplicarModoTela();
+atualizarLayoutTela((document.querySelector('.screen.active')||{}).id || '');
+
 </script>
 </body>
 </html>
