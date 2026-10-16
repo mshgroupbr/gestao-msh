@@ -1032,6 +1032,20 @@ function renderHome(){
     goTo('s-unidade');
     return;
   }
+  const _tabsEl = document.getElementById('home-tabs');
+  if(perfil==='gerente'){
+    if(_tabsEl) _tabsEl.style.display = 'none';
+    const _body = document.getElementById('home-body');
+    const _nome = sessionStorage.getItem('gerenteNome') || 'Gerente';
+    _body.innerHTML = '<div class="welcome-txt">Olá, '+_nome+'! 👋<br><span style="font-weight:400;font-size:13px;opacity:.65">'+unidade+'</span></div>' +
+      '<div class="card" style="text-align:center;padding:26px 18px;cursor:pointer" onclick="goTo(\'s-vendas-import\')">' +
+      '<div style="font-size:38px;margin-bottom:8px">🌙</div>' +
+      '<div style="font-size:18px;font-weight:700;margin-bottom:6px">Fechamento Noturno</div>' +
+      '<div style="font-size:13px;opacity:.7;margin-bottom:16px">Enviar os 2 relatórios do Allfood de hoje:<br>1) Vendas (.xlsx) · 2) Detalhamento financeiro (.xlsx)</div>' +
+      '<button class="btn-or" style="width:100%">Enviar relatórios</button></div>';
+    return;
+  }
+  if(_tabsEl) _tabsEl.style.display = '';
   homeTabAtual='visao';
   renderHomeTabsBar(perfil);
   renderHomeTabConteudo(perfil);
