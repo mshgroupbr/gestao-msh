@@ -3000,7 +3000,10 @@ async function fdGerarPdf(D){
       footStyles: {fillColor: C.soft, textColor: C.dark, fontStyle: 'bold'},
       alternateRowStyles: {fillColor: [250,248,243]},
       columnStyles: colStyles || {}, margin: {left: M, right: M}
-    }, opts || {}));
+    }, opts || {}, {didParseCell: function(d){
+      if(colStyles && colStyles[d.column.index] && colStyles[d.column.index].halign==='right') d.cell.styles.halign = 'right';
+      if(opts && opts.didParseCell) opts.didParseCell(d);
+    }}));
     y = doc.lastAutoTable.finalY + 16;
   };
   const R = {halign:'right'};
