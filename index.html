@@ -17,6 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 if('serviceWorker' in navigator){
@@ -249,6 +251,11 @@ body.desk .home-tabs{padding-left:32px;padding-right:32px}
 body.desk .admin-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
 body.desk #toast{left:calc(50% + 124px)}
 body.desk.no-side #toast{left:50%}
+.fd-det{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:12px 14px;margin-top:10px}
+.fd-det summary{font-weight:700;font-size:14px;cursor:pointer;margin-bottom:8px}
+.fd-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
+.fd-det textarea{width:100%;box-sizing:border-box;border:.5px solid var(--bdr2);border-radius:var(--rs);padding:10px;font:inherit;font-size:14px;background:#fff;resize:vertical}
 </style>
 </head>
 <body>
@@ -537,9 +544,10 @@ body.desk.no-side #toast{left:50%}
 <div class="screen" id="s-vendas-import">
   <div class="hdr">
     <button class="back" onclick="goTo('s-home')">‹</button>
-    <div class="htxt"><h1>Fechamento Noturno</h1><p>Vendas + Detalhamento financeiro (Allfood)</p></div>
+    <div class="htxt"><h1>Fechamento Noturno</h1><p>Relatórios do Allfood, equipe e dashboard</p></div>
   </div>
   <div class="body">
+    <div class="card" style="margin-bottom:12px"><div class="field" style="margin-bottom:6px"><label class="fl">Dia da operação</label><input type="date" id="fd-data" onchange="fdCarregar()"></div><div id="fd-status" style="font-size:12px"></div></div>
     <div id="vendas-ultimo-importado" style="margin-bottom:12px"></div>
     <div class="card">
       <div class="field">
@@ -557,6 +565,24 @@ body.desk.no-side #toast{left:50%}
       <button class="btn-or" onclick="importarFechamentoFinanceiro()">Enviar detalhamento</button>
     </div>
     <div id="fechamento-import-results"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="field">
+        <label class="fl">3. Cancelamentos (.xlsx)</label>
+        <input type="file" id="canc-file-input" accept=".xlsx,.xls">
+      </div>
+      <button class="btn-or" onclick="importarCancelamentos()">Enviar cancelamentos</button>
+    </div>
+    <div id="canc-import-results"></div>
+    <div class="sec-l" style="margin-top:14px">4. Equipe e relato da operação</div>
+    <div id="fd-form"></div>
+    <div class="card" id="fd-meta-wrap" style="margin-top:10px;display:none"><div class="field" style="margin:0"><label class="fl">Meta de faturamento do mês (R$) — só master</label><input type="number" id="fd-meta" min="0" placeholder="300000"></div></div>
+    <button class="btn-or" style="margin-top:10px" onclick="fdSalvar()">💾 Salvar dados da operação</button>
+    <div class="sec-l" style="margin-top:14px">5. Dashboard</div>
+    <div class="card">
+      <button class="btn-or" id="fd-gen-btn" onclick="fdGerarDashboard()">📄 Gerar dashboard (PDF)</button>
+      <div id="fd-gen-result"></div>
+      <button class="btn-or" id="fd-wa-btn" style="margin-top:10px;background:#25D366" onclick="fdEnviarWhatsapp()" disabled>📲 Enviar no WhatsApp (grupo de caixa)</button>
+    </div>
     <div class="sec-l" style="margin-top:14px">Últimos envios</div>
     <div id="fechamento-recent-list"></div>
   </div>
@@ -1598,6 +1624,7 @@ function renderVendasImportScreen(){
   if(fResultsEl) fResultsEl.innerHTML='';
   carregarUltimoImportadoVendas();
   renderFechamentosFinanceirosList();
+  fdInit();
 }
 // Olha o último dia com vendas gravadas de cada unidade e o horário mais tarde
 // registrado nesse dia — assim o gestor sabe exatamente a partir de quando
@@ -2547,42 +2574,664 @@ function isoParaBRNF(iso){
   return p[2]+'/'+p[1]+'/'+p[0];
 }
 
-function importarFechamentoFinanceiro(){
-  const __perfilFF = sessionStorage.getItem('perfilAtivo');
-  if(__perfilFF!=='master' && __perfilFF!=='gerente') return;
-  const input = document.getElementById('fechamento-file-input');
-  const files = Array.from((input && input.files)||[]);
-  const resultsEl = document.getElementById('fechamento-import-results');
-  if(files.length===0){ toast('Selecione ao menos um arquivo'); return; }
-  resultsEl.innerHTML = '<div class="empty-msg">Enviando...</div>';
-  const unidade = getUnidadeAtual();
-  const slug = unidadeParaSlug(unidade);
-  const hoje = formatDateLocal(new Date());
-  const enviadoPor = sessionStorage.getItem('gerenteNome') || 'Master';
-  const promessas = files.map(function(file){
-    return new Promise(function(resolve, reject){
-      const reader = new FileReader();
-      reader.onload = function(){
-        const base64 = reader.result.split(',')[1];
-        FECHAMENTOS_FIN_REF.child(slug).child(hoje).set({
-          fileName: file.name,
-          base64: base64,
-          enviadoPor: enviadoPor,
-          timestamp: Date.now()
-        }).then(resolve).catch(reject);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  });
-  Promise.all(promessas).then(function(){
-    resultsEl.innerHTML = '<div class="ri"><div class="ri-name">Enviado com sucesso!</div></div>';
-    if(input) input.value='';
-    renderFechamentosFinanceirosList();
-  }).catch(function(err){
-    resultsEl.innerHTML = '<div class="ri"><div class="badge br">Erro: '+escapeHtml(String((err&&err.message)||err))+'</div></div>';
+/* ================= FECHAMENTO NOTURNO v2: EQUIPE, RELATOS, CANCELAMENTOS E DASHBOARD ================= */
+var FECH_DIA_REF = db.ref('gestao_fechamento_dia');
+var METAS_REF = db.ref('gestao_metas');
+var METAS_PADRAO = {cali:{'2026-10':300000}};
+var CORTE_TURNO_MIN = 17*60;   // antes das 17:00 = almoço
+var CORTE_DIA_MIN = 5*60;      // vendas antes das 05:00 pertencem ao dia operacional anterior
+var ICB_META = 2;
+var FD_CARGOS = [['hostess','Hostess'],['caixa','Caixa'],['garcons','Garçons'],['cumins','Cumins'],['cozinheiros','Cozinheiros'],['chefes','Chefes de cozinha'],['coordenadores','Coordenadores de salão']];
+var fdPdfCache = null;
+var fdFormMontado = false;
+
+function fdDiaPadrao(){ const d = new Date(); if(d.getHours() < 6) d.setDate(d.getDate()-1); return formatDateLocal(d); }
+function fdSomaDias(iso, n){ const p = iso.split('-').map(Number); return formatDateLocal(new Date(p[0], p[1]-1, p[2]+n)); }
+function fdDataBR(iso){ const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function fdDiaSemana(iso){ const p = iso.split('-').map(Number); return ['DOMINGO','SEGUNDA','TERÇA','QUARTA','QUINTA','SEXTA','SÁBADO'][new Date(p[0], p[1]-1, p[2]).getDay()]; }
+function fdN(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function fdSlug(){ return unidadeParaSlug(getUnidadeAtual()); }
+function fdDia(){ const el = document.getElementById('fd-data'); return (el && el.value) || fdDiaPadrao(); }
+function fdBRL(v){ return (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}).replace(/\u00a0/g,' '); }
+function fdNum(v, d){ return (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:d||0, maximumFractionDigits:d||0}); }
+function fdUnidadeDoArquivo(empresa){
+  const up = (empresa||'').toUpperCase();
+  if(up.indexOf('TEXAS') >= 0) return 'Texas Country Bar';
+  if(up.indexOf('CALI') >= 0) return 'Cali Cravings';
+  return null;
+}
+
+/* ---------- formulário (equipe + relatos) ---------- */
+function fdMontarForm(){
+  if(fdFormMontado) return;
+  const el = document.getElementById('fd-form'); if(!el) return;
+  fdFormMontado = true;
+  const bloco = function(t, rot, aberto){
+    return '<details class="fd-det"'+(aberto?' open':'')+'><summary>'+rot+'</summary>' +
+      '<div class="field"><label class="fl">Clientes atendidos (PAX)</label><input type="number" min="0" id="fd-pax-'+t+'" placeholder="Ex: 79"></div>' +
+      '<div class="fl" style="margin:10px 0 6px">Equipe do turno (quantidade)</div>' +
+      '<div class="fd-grid">' + FD_CARGOS.map(function(c){ return '<div class="field"><label class="fl">'+c[1]+'</label><input type="number" min="0" id="fd-eq-'+t+'-'+c[0]+'" placeholder="0"></div>'; }).join('') + '</div>' +
+      '<div class="field"><label class="fl">Resumo da operação</label><textarea id="fd-resumo-'+t+'" rows="3" placeholder="Como foi o turno: movimento, destaques, clima da equipe..."></textarea></div>' +
+      '<div class="field"><label class="fl">Erros e problemas</label><textarea id="fd-erros-'+t+'" rows="3" placeholder="O que deu errado: faltas, lentidão, falhas, reclamações..."></textarea></div>' +
+      '<div class="field"><label class="fl">Acertos e destaques</label><textarea id="fd-acertos-'+t+'" rows="3" placeholder="O que funcionou bem, elogios, vendas de destaque..."></textarea></div>' +
+      '</details>';
+  };
+  el.innerHTML = bloco('a','☀️ Almoço', true) + bloco('j','🌙 Jantar', true);
+}
+function fdColetarTurno(t){
+  const eq = {};
+  FD_CARGOS.forEach(function(c){ eq[c[0]] = fdN((document.getElementById('fd-eq-'+t+'-'+c[0])||{}).value); });
+  const v = function(id){ const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+  return {pax: fdN((document.getElementById('fd-pax-'+t)||{}).value), equipe: eq, resumo: v('fd-resumo-'+t), erros: v('fd-erros-'+t), acertos: v('fd-acertos-'+t)};
+}
+function fdPreencherTurno(t, d){
+  d = d || {};
+  const set = function(id, val){ const e = document.getElementById(id); if(e) e.value = (val===undefined||val===null) ? '' : val; };
+  set('fd-pax-'+t, d.pax || '');
+  FD_CARGOS.forEach(function(c){ set('fd-eq-'+t+'-'+c[0], (d.equipe && d.equipe[c[0]]) || ''); });
+  set('fd-resumo-'+t, d.resumo || ''); set('fd-erros-'+t, d.erros || ''); set('fd-acertos-'+t, d.acertos || '');
+}
+function fdInit(){
+  fdMontarForm();
+  const d = document.getElementById('fd-data');
+  if(d && !d.value) d.value = fdDiaPadrao();
+  const mw = document.getElementById('fd-meta-wrap');
+  if(mw) mw.style.display = (sessionStorage.getItem('perfilAtivo')==='master') ? '' : 'none';
+  fdCarregar();
+}
+function fdCarregar(){
+  fdPdfCache = null;
+  const w = document.getElementById('fd-wa-btn'); if(w) w.disabled = true;
+  const slug = fdSlug(), dia = fdDia(), mes = dia.slice(0,7);
+  const st = document.getElementById('fd-status');
+  if(st) st.innerHTML = '<span style="opacity:.6">Verificando arquivos de '+fdDataBR(dia)+'...</span>';
+  Promise.all([
+    FECH_DIA_REF.child(slug).child(dia).once('value'),
+    VENDAS_REF.child(slug).child(dia).limitToFirst(1).once('value'),
+    METAS_REF.child(slug).child(mes).once('value')
+  ]).then(function(res){
+    const f = res[0].val() || {};
+    const op = f.operacao || {};
+    fdPreencherTurno('a', op.almoco); fdPreencherTurno('j', op.jantar);
+    const temVendas = res[1].exists();
+    const ok = function(b, rot){ return '<span style="color:'+(b?'#1d9e75':'#b02a2a')+';font-weight:600">'+(b?'✓ ':'✗ ')+rot+'</span>'; };
+    if(st) st.innerHTML = ok(temVendas,'Vendas') + ' &nbsp;·&nbsp; ' + ok(!!f.detalhamento,'Detalhamento') + ' &nbsp;·&nbsp; ' + ok(!!f.cancelamentos,'Cancelamentos') + ' &nbsp;·&nbsp; ' + ok(!!f.operacao,'Equipe e relatos');
+    const mi = document.getElementById('fd-meta');
+    if(mi){ const m = res[2].val(); mi.value = (m!=null) ? m : ((METAS_PADRAO[slug]||{})[mes] || ''); }
   });
 }
+function fdSalvar(silencioso){
+  const slug = fdSlug(), dia = fdDia(), mes = dia.slice(0,7);
+  const obj = {almoco: fdColetarTurno('a'), jantar: fdColetarTurno('j'), atualizadoPor: sessionStorage.getItem('gerenteNome') || 'Master', ts: Date.now()};
+  const ps = [FECH_DIA_REF.child(slug).child(dia).child('operacao').set(obj)];
+  if(sessionStorage.getItem('perfilAtivo')==='master'){
+    const m = fdN((document.getElementById('fd-meta')||{}).value);
+    if(m > 0) ps.push(METAS_REF.child(slug).child(mes).set(m));
+  }
+  return Promise.all(ps).then(function(){ if(!silencioso) toast('✅ Dados da operação salvos'); fdPdfCache = null; fdCarregarStatusRapido(); });
+}
+function fdCarregarStatusRapido(){
+  const w = document.getElementById('fd-wa-btn'); if(w) w.disabled = true;
+}
+
+/* ---------- parsing: detalhamento financeiro ---------- */
+async function parseDetalhamentoFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array', cellDates:true});
+  const sh = wb.Sheets[wb.SheetNames.indexOf('Allfood') >= 0 ? 'Allfood' : wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sh, {header:1, raw:true});
+  const out = {empresa:'', dia:null, vals:{}, ocorr:{}, formas:[], totTeorico:0, totAuditado:0, totDif:0};
+  let sec = 0, modo = '';
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i] || [];
+    const a = (r[0]==null) ? '' : String(r[0]).trim();
+    if(!a) continue;
+    const al = a.toLowerCase();
+    if(al==='empresa:'){ out.empresa = r[1]!=null ? String(r[1]).trim() : ''; continue; }
+    if(al==='de:' && r[1] instanceof Date){ out.dia = formatDateLocal(r[1]); continue; }
+    const mSec = a.match(/^(\d+)\.\s/);
+    if(mSec){ sec = parseInt(mSec[1],10); modo = ''; continue; }
+    if(al==='descrição' || al==='descricao'){ modo = 'ocorr'; continue; }
+    if(al.indexOf('forma de recebimento')===0){ modo = 'formas'; continue; }
+    if(modo==='formas'){
+      if(al.indexOf('total teórico')===0 || al.indexOf('total teorico')===0){ out.totTeorico = Number(r[1])||0; continue; }
+      if(al.indexOf('total auditado')===0){ out.totAuditado = Number(r[1])||0; continue; }
+      if(al.indexOf('total diferença')===0 || al.indexOf('total diferenca')===0){ out.totDif = Number(r[1])||0; continue; }
+      out.formas.push({forma:a, teorico:Number(r[1])||0, auditado:Number(r[2])||0, dif:Number(r[3])||0});
+      continue;
+    }
+    if(modo==='ocorr'){ out.ocorr[a] = [r[1],r[2],r[3],r[4]]; continue; }
+    if(typeof r[1]==='number'){ out.vals[sec+'.'+al.replace(/^\([^)]*\)\s*/,'').trim()] = r[1]; }
+  }
+  const v = function(k){ return Number(out.vals[k])||0; };
+  const somaOc = function(k){ const x = out.ocorr[k]; return x ? x.reduce(function(s,n){ return s+(Number(n)||0); },0) : 0; };
+  const perm = out.ocorr['Tempo médio de permanência'];
+  return {
+    empresa: out.empresa, dia: out.dia,
+    bruto: v('1.total bruto'), cancelado: v('2.total cancelado'), efetivo: v('3.total efetivado'),
+    descItens: v('4.descontos (itens)'), descTrocas: v('4.descontos (trocas)'), descFid: v('4.descontos (fidelidade)'), descComandas: v('4.descontos (comandas)'), descTotal: v('4.total em descontos'),
+    recebido: v('5.total recebido'), saldo: v('7.saldo final'),
+    pessoas: somaOc('Número de pessoas'), comandasPagas: somaOc('Quantidade de comandas pagas'), comandasCanc: somaOc('Quantidade de comandas canceladas'),
+    permanencia: perm && perm[0] ? String(perm[0]) : '',
+    formas: out.formas, totTeorico: out.totTeorico, totAuditado: out.totAuditado, totDif: out.totDif
+  };
+}
+
+/* ---------- parsing: cancelamentos ---------- */
+async function parseCancelamentosFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array', cellDates:true});
+  const sh = wb.Sheets[wb.SheetNames.indexOf('Allfood') >= 0 ? 'Allfood' : wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sh, {header:1, raw:true});
+  let empresa = '', dia = null, hi = -1;
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i] || [];
+    const a = (r[0]==null) ? '' : String(r[0]).trim();
+    if(a==='Empresa:') empresa = r[1]!=null ? String(r[1]).trim() : '';
+    if(!dia && r[0] instanceof Date && hi < 0) dia = formatDateLocal(r[0]);
+    if(a.toUpperCase()==='COMANDA'){ hi = i; break; }
+  }
+  const out = {empresa: empresa, dia: dia, headerFound: hi >= 0, rows: []};
+  if(hi < 0) return out;
+  const H = {}; (rows[hi]||[]).forEach(function(h, idx){ if(h!=null) H[String(h).trim().toUpperCase()] = idx; });
+  const col = function(nome){ return H[nome]; };
+  const iItem = col('ITEM DE VENDA'), iVal = col('V.CANCELADO'), iMot = col('MOTIVO'), iOp = col('OPERADOR CX'), iVend = col('VENDEDOR'), iDesp = col('DESPERDÍCIO'), iQ = col('QTDE'), iCanc = col('CANCELAMENTO'), iCom = col('COMANDA'), iGer = col('GERENTE');
+  for(let i=hi+1;i<rows.length;i++){
+    const r = rows[i] || [];
+    if(r[0]==null || r[0]==='' || isNaN(Number(r[0]))) break;
+    const dt = (iCanc!=null && r[iCanc] instanceof Date) ? r[iCanc] : null;
+    out.rows.push({
+      comanda: Number(r[iCom])||0,
+      item: iItem!=null && r[iItem]!=null ? String(r[iItem]) : '',
+      qtde: Number(r[iQ])||0,
+      valor: Number(r[iVal])||0,
+      motivo: iMot!=null && r[iMot]!=null ? String(r[iMot]).trim() : '(sem motivo)',
+      operador: iOp!=null && r[iOp]!=null ? String(r[iOp]).trim() : '',
+      vendedor: iVend!=null && r[iVend]!=null ? String(r[iVend]).trim() : '',
+      gerente: iGer!=null && r[iGer]!=null ? String(r[iGer]).trim() : '',
+      desperdicio: iDesp!=null && String(r[iDesp]||'').toUpperCase().indexOf('S')===0,
+      hora: dt ? (String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0')) : ''
+    });
+  }
+  return out;
+}
+
+/* ---------- uploads ---------- */
+function fdVerificaUnidade(empresa){
+  const un = fdUnidadeDoArquivo(empresa);
+  if(un && un !== getUnidadeAtual()){
+    toast('⚠️ Arquivo é de '+un+' e você está em '+getUnidadeAtual());
+    return false;
+  }
+  return true;
+}
+async function importarCancelamentos(){
+  const perfil = sessionStorage.getItem('perfilAtivo');
+  if(perfil!=='master' && perfil!=='gerente') return;
+  const input = document.getElementById('canc-file-input');
+  const files = Array.from((input && input.files) || []);
+  const el = document.getElementById('canc-import-results');
+  if(!files.length){ toast('Selecione o arquivo de cancelamentos'); return; }
+  el.innerHTML = '<div class="empty-msg">Lendo cancelamentos...</div>';
+  try{
+    const p = await parseCancelamentosFile(files[0]);
+    if(!p.headerFound){ el.innerHTML = '<div class="ri"><div class="badge br">Erro: não encontrei o cabeçalho "COMANDA" neste arquivo.</div></div>'; return; }
+    if(!fdVerificaUnidade(p.empresa)){ el.innerHTML = '<div class="ri"><div class="badge br">Erro: este arquivo é de outra unidade ('+escapeHtml(p.empresa)+').</div></div>'; return; }
+    const slug = fdSlug();
+    const dia = p.dia || fdDia();
+    const d = document.getElementById('fd-data'); if(d && d.value !== dia) d.value = dia;
+    await FECH_DIA_REF.child(slug).child(dia).child('cancelamentos').set({arquivo: files[0].name, rows: p.rows, enviadoPor: sessionStorage.getItem('gerenteNome') || 'Master', ts: Date.now()});
+    const tot = p.rows.filter(function(r){ return r.item.toUpperCase()!=='SERVIÇO' && r.item.toUpperCase()!=='SERVICO'; }).reduce(function(s,r){ return s+r.valor; },0);
+    el.innerHTML = '<div class="ri"><div class="ri-name">Cancelamentos de '+fdDataBR(dia)+' enviados</div><div class="ri-cat">'+p.rows.length+' lançamentos · '+fdBRL(tot)+' em itens cancelados</div></div>';
+    if(input) input.value = '';
+    fdCarregar();
+  }catch(err){
+    el.innerHTML = '<div class="ri"><div class="badge br">Erro: '+escapeHtml(String((err && err.message) || err))+'</div></div>';
+  }
+}
+async function importarFechamentoFinanceiro(){
+  const __p = sessionStorage.getItem('perfilAtivo');
+  if(__p!=='master' && __p!=='gerente') return;
+  const input = document.getElementById('fechamento-file-input');
+  const files = Array.from((input && input.files) || []);
+  const el = document.getElementById('fechamento-import-results');
+  if(!files.length){ toast('Selecione ao menos um arquivo'); return; }
+  el.innerHTML = '<div class="empty-msg">Enviando...</div>';
+  try{
+    const slug = fdSlug();
+    const enviadoPor = sessionStorage.getItem('gerenteNome') || 'Master';
+    let dia = fdDia(), resumo = '';
+    let det = null;
+    try{ det = await parseDetalhamentoFile(files[0]); }catch(e){ det = null; }
+    if(det){
+      if(!fdVerificaUnidade(det.empresa)){ el.innerHTML = '<div class="ri"><div class="badge br">Erro: este arquivo é de outra unidade ('+escapeHtml(det.empresa)+').</div></div>'; return; }
+      if(det.dia) dia = det.dia;
+    }
+    const d = document.getElementById('fd-data'); if(d && d.value !== dia) d.value = dia;
+    for(const file of files){
+      const base64 = await new Promise(function(resolve, reject){
+        const rd = new FileReader();
+        rd.onload = function(){ resolve(rd.result.split(',')[1]); };
+        rd.onerror = reject;
+        rd.readAsDataURL(file);
+      });
+      await FECHAMENTOS_FIN_REF.child(slug).child(dia).set({fileName: file.name, base64: base64, enviadoPor: enviadoPor, timestamp: Date.now()});
+    }
+    if(det){
+      await FECH_DIA_REF.child(slug).child(dia).child('detalhamento').set(Object.assign({arquivo: files[0].name, enviadoPor: enviadoPor, ts: Date.now()}, det));
+      resumo = ' · recebido '+fdBRL(det.recebido)+' · cancelado '+fdBRL(det.cancelado)+' · descontos '+fdBRL(det.descTotal);
+    }
+    el.innerHTML = '<div class="ri"><div class="ri-name">Enviado com sucesso! ('+fdDataBR(dia)+')</div><div class="ri-cat">'+escapeHtml(files[0].name)+escapeHtml(resumo)+'</div></div>';
+    if(input) input.value = '';
+    renderFechamentosFinanceirosList();
+    fdCarregar();
+  }catch(err){
+    el.innerHTML = '<div class="ri"><div class="badge br">Erro: '+escapeHtml(String((err && err.message) || err))+'</div></div>';
+  }
+}
+
+/* ---------- agregação do dia operacional ---------- */
+var FD_GRUPOS_BEBIDA = ['Águas','Refrigerantes','Sucos','Cervejas / Chopps','Drinks / Coquetéis','Vinhos / Espumantes','Doses','Outras bebidas'];
+function fdEhServico(item){ const u = (item||'').toString().toUpperCase(); return u==='SERVIÇO' || u==='SERVICO'; }
+function fdGrupoBebida(item, cat){
+  if(cat==='DRINKS') return 'Drinks / Coquetéis';
+  if(cat!=='BEBIDAS') return null;
+  const n = (normNome(item)||'').toString().toUpperCase();
+  if(/AGUA/.test(n) && !/COCO/.test(n)) return 'Águas';
+  if(/COCA|GUARANA|FANTA|SPRITE|SCHWEPP|PEPSI|H2O|TONICA|GINGER|SODA|REFRIG|MATE/.test(n)) return 'Refrigerantes';
+  if(/SUCO|COCO|LIMONADA/.test(n)) return 'Sucos';
+  if(/CERVEJA|CHOPP|CHOP |HEINEKEN|BUDWEISER|STELLA|CORONA|PILSEN|LAGER|BRAHMA|SKOL|IPA/.test(n)) return 'Cervejas / Chopps';
+  if(/VINHO|ESPUMANTE|PROSECCO|CHAMPAGNE|TACA|MALBEC|CABERNET|CHARDONNAY|SAUVIGNON|MERLOT/.test(n)) return 'Vinhos / Espumantes';
+  if(/WHISK|GIN |GIN$|VODKA|RUM|TEQUILA|CACHACA|DOSE|CAMPARI|APEROL|LICOR|JACK|CHIVAS|JOHNNIE|MACALLAN/.test(n)) return 'Doses';
+  return 'Outras bebidas';
+}
+function fdLinhasOp(obj0, obj1){
+  const out = [];
+  Object.values(obj0 || {}).forEach(function(r){
+    if(!r) return;
+    if(r.horaMin == null || r.horaMin >= CORTE_DIA_MIN) out.push({r:r, t:(r.horaMin != null && r.horaMin < CORTE_TURNO_MIN) ? 'a' : 'j'});
+  });
+  Object.values(obj1 || {}).forEach(function(r){
+    if(!r) return;
+    if(r.horaMin != null && r.horaMin < CORTE_DIA_MIN) out.push({r:r, t:'j'});
+  });
+  return out;
+}
+async function fdConstruir(slug, dia){
+  await new Promise(function(res){ carregarProdutoCategoriaCache(res); });
+  const mes = dia.slice(0,7), diaNum = parseInt(dia.slice(8,10),10);
+  const diasNoMes = new Date(parseInt(dia.slice(0,4),10), parseInt(dia.slice(5,7),10), 0).getDate();
+  const dias = []; for(let k=0;k<=diaNum;k++) dias.push(fdSomaDias(mes+'-01', k));
+  const res = await Promise.all([
+    Promise.all(dias.map(function(d){ return VENDAS_REF.child(slug).child(d).once('value'); })),
+    FECH_DIA_REF.child(slug).child(dia).once('value'),
+    METAS_REF.child(slug).child(mes).once('value')
+  ]);
+  const byDay = {}; dias.forEach(function(d, i){ byDay[d] = res[0][i].val() || {}; });
+  const fech = res[1].val() || {};
+  let acum = 0, fatDia = 0;
+  for(let k=1;k<=diaNum;k++){
+    const f = fdLinhasOp(byDay[dias[k-1]], byDay[dias[k]]).reduce(function(s,x){ return s + (Number(x.r.vLiquida)||0); }, 0);
+    acum += f; if(k===diaNum) fatDia = f;
+  }
+  const linhas = fdLinhasOp(byDay[dias[diaNum-1]], byDay[dias[diaNum]]);
+  const novoT = function(){ return {fat:0, bebidas:{}, totalBebidas:0, itens:{}}; };
+  const T = {a: novoT(), j: novoT()};
+  const desc = {servico:0, itens:0, cortesias:0, porVendedor:{}, porItem:{}};
+  linhas.forEach(function(x){
+    const r = x.r, t = T[x.t];
+    const vl = Number(r.vLiquida)||0, q = Number(r.quantidade)||0, item = (r.item||'').toString();
+    t.fat += vl;
+    const cat = categoriaDoItem(item);
+    const g = fdGrupoBebida(item, cat);
+    if(g){ t.bebidas[g] = (t.bebidas[g]||0) + q; t.totalBebidas += q; }
+    if(!fdEhServico(item) && cat.indexOf('ADICIONA') < 0){ const o = t.itens[item] || (t.itens[item] = {q:0, v:0}); o.q += q; o.v += vl; }
+    const d = Number(r.descontos)||0;
+    if(d > 0){
+      if(fdEhServico(item)) desc.servico += d;
+      else {
+        desc.itens += d;
+        const vd = r.vendedor || '—'; desc.porVendedor[vd] = (desc.porVendedor[vd]||0) + d;
+        desc.porItem[item] = (desc.porItem[item]||0) + d;
+        if(vl <= 0.01) desc.cortesias++;
+      }
+    }
+  });
+  const op = fech.operacao || {};
+  const meta = res[2].val() != null ? Number(res[2].val()) : ((METAS_PADRAO[slug]||{})[mes] || 0);
+  const rowsC = (fech.cancelamentos && fech.cancelamentos.rows) || [];
+  const itensC = rowsC.filter(function(r){ return !fdEhServico(r.item); });
+  const C = {tem: !!fech.cancelamentos, total: 0, qtd: 0, linhas: itensC.length, servico: 0, desperdicio: 0, porMotivo: {}, porVendedor: {}, maiores: []};
+  rowsC.forEach(function(r){ if(fdEhServico(r.item)) C.servico += r.valor; });
+  itensC.forEach(function(r){
+    C.total += r.valor; C.qtd += r.qtde;
+    if(r.desperdicio) C.desperdicio += r.valor;
+    const m = C.porMotivo[r.motivo] || (C.porMotivo[r.motivo] = {q:0, v:0}); m.q += r.qtde; m.v += r.valor;
+    const vd = r.vendedor || r.operador || '—'; const o = C.porVendedor[vd] || (C.porVendedor[vd] = {q:0, v:0}); o.q += r.qtde; o.v += r.valor;
+  });
+  C.maiores = itensC.slice().sort(function(a,b){ return b.valor - a.valor; }).slice(0,5);
+  const restantes = Math.max(0, diasNoMes - diaNum);
+  return {
+    slug: slug, unidade: slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings', dia: dia, mes: mes, diaNum: diaNum, diasNoMes: diasNoMes,
+    gerente: sessionStorage.getItem('gerenteNome') || 'Master',
+    fat: {a: T.a.fat, j: T.j.fat, dia: fatDia}, acum: acum, meta: meta, restantes: restantes,
+    T: T, desc: desc, C: C, op: op, det: fech.detalhamento || null, temVendas: linhas.length > 0
+  };
+}
+function fdPaxTurno(D, t){
+  const o = (D.op && (t==='a' ? D.op.almoco : D.op.jantar)) || {};
+  return Number(o.pax)||0;
+}
+function fdIcb(D, t){
+  const pax = t==='dia' ? fdPaxTurno(D,'a') + fdPaxTurno(D,'j') : fdPaxTurno(D,t);
+  const beb = t==='dia' ? D.T.a.totalBebidas + D.T.j.totalBebidas : D.T[t].totalBebidas;
+  return pax > 0 ? beb / pax : null;
+}
+function fdTextoWhats(D){
+  const paxD = fdPaxTurno(D,'a') + fdPaxTurno(D,'j');
+  const icb = fdIcb(D,'dia');
+  const pct = D.meta > 0 ? (D.acum / D.meta * 100) : null;
+  let t = '*'+D.unidade.toUpperCase()+' — Fechamento '+fdDataBR(D.dia)+' ('+fdDiaSemana(D.dia)+')*\n';
+  t += '💰 Faturamento: *'+fdBRL(D.fat.dia)+'* (almoço '+fdBRL(D.fat.a)+' | jantar '+fdBRL(D.fat.j)+')\n';
+  if(paxD > 0) t += '👥 PAX: *'+paxD+'* | Ticket médio: *'+fdBRL(D.fat.dia/paxD)+'*\n';
+  if(icb != null) t += '🍹 ICB: *'+fdNum(icb,2)+'* (meta '+fdNum(ICB_META,1)+') '+(icb >= ICB_META ? '✅' : '⚠️')+'\n';
+  if(pct != null) t += '🎯 Meta do mês: *'+fdNum(pct,1)+'%* ('+fdBRL(D.acum)+' de '+fdBRL(D.meta)+')\n';
+  if(D.C.tem) t += '❌ Cancelamentos: '+fdBRL(D.C.total)+'\n';
+  const dt = D.det ? D.det.descTotal : (D.desc.itens + D.desc.servico);
+  t += '🏷️ Descontos: '+fdBRL(dt)+'\n';
+  t += '\n_Dashboard completo em anexo (PDF)._';
+  return t;
+}
+
+/* ---------- PDF do dashboard ---------- */
+function fdCarregarImagem(url){
+  return new Promise(function(res){
+    const im = new Image();
+    im.onload = function(){
+      try{
+        const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+        c.getContext('2d').drawImage(im, 0, 0);
+        res({data: c.toDataURL('image/png'), w: im.naturalWidth, h: im.naturalHeight});
+      }catch(e){ res(null); }
+    };
+    im.onerror = function(){ res(null); };
+    im.src = url;
+  });
+}
+async function fdGerarPdf(D){
+  const jsPDF = window.jspdf.jsPDF;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const W = 595.28, H = 841.89, M = 30, CW = W - 2*M;
+  const texas = D.slug === 'texas';
+  const C = texas
+    ? {dark:[122,31,31], acc:[163,45,45], soft:[250,238,238]}
+    : {dark:[44,62,53], acc:[29,158,117], soft:[225,245,238]};
+  const TXT = [26,26,26], MUT = [102,102,96], RED = [163,45,45], GRN = [29,158,117], AMB = [181,114,11], BEGE = [245,240,232];
+  const logo = await fdCarregarImagem(texas ? 'icon-texas.png' : 'icon-cali.png');
+  let y = 0;
+  const ensure = function(h){ if(y + h > H - 46){ doc.addPage(); y = 40; } };
+  const sec = function(n, titulo){
+    ensure(36);
+    doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]); doc.rect(M, y, 4, 16, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
+    doc.text(n+'   '+titulo.toUpperCase(), M+11, y+12);
+    y += 26;
+  };
+  const cards = function(arr){
+    ensure(64);
+    const gap = 8, w = (CW - gap*(arr.length-1)) / arr.length;
+    arr.forEach(function(c, i){
+      const x = M + i*(w+gap);
+      doc.setFillColor(BEGE[0], BEGE[1], BEGE[2]); doc.roundedRect(x, y, w, 54, 6, 6, 'F');
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+      doc.text(c[0].toUpperCase(), x+9, y+14);
+      const col = c[3] || C.dark;
+      doc.setFont('helvetica','bold'); doc.setFontSize(c[1].length > 13 ? 11.5 : 14); doc.setTextColor(col[0], col[1], col[2]);
+      doc.text(c[1], x+9, y+33);
+      if(c[2]){ doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]); doc.text(c[2], x+9, y+46); }
+    });
+    y += 64;
+  };
+  const tabela = function(head, body, foot, colStyles, opts){
+    doc.autoTable(Object.assign({
+      startY: y, head: [head], body: body, foot: foot ? [foot] : undefined, showFoot: 'lastPage',
+      styles: {fontSize: 8.5, font: 'helvetica', cellPadding: 4, textColor: TXT},
+      headStyles: {fillColor: C.dark, textColor: 255, fontStyle: 'bold'},
+      footStyles: {fillColor: C.soft, textColor: C.dark, fontStyle: 'bold'},
+      alternateRowStyles: {fillColor: [250,248,243]},
+      columnStyles: colStyles || {}, margin: {left: M, right: M}
+    }, opts || {}));
+    y = doc.lastAutoTable.finalY + 16;
+  };
+  const R = {halign:'right'};
+  const paxA = fdPaxTurno(D,'a'), paxJ = fdPaxTurno(D,'j'), paxD = paxA + paxJ;
+
+  /* ---- cabeçalho ---- */
+  doc.setFillColor(C.dark[0], C.dark[1], C.dark[2]); doc.rect(0, 0, W, 78, 'F');
+  let tx = M;
+  if(logo){ const s = 46; doc.addImage(logo.data, 'PNG', M, 16, s, s); tx = M + s + 12; }
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(17);
+  doc.text(D.unidade.toUpperCase(), tx, 38);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  doc.text('DASHBOARD OPERACIONAL  ·  '+['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'][parseInt(D.mes.slice(5,7),10)-1]+' '+D.mes.slice(0,4), tx, 54);
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text(fdDataBR(D.dia), W-M, 36, {align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(fdDiaSemana(D.dia), W-M, 51, {align:'right'});
+  doc.setFontSize(8.5); doc.text('Gerente: '+D.gerente, W-M, 66, {align:'right'});
+  y = 96;
+
+  /* ---- 01 meta ---- */
+  sec('01', 'Acompanhamento da meta mensal');
+  const pct = D.meta > 0 ? D.acum / D.meta : 0;
+  if(D.meta > 0){
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+    doc.text('Dia '+D.diaNum+' de '+D.diasNoMes, M, y+8);
+    doc.setFont('helvetica','bold'); doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
+    doc.text(fdNum(pct*100,1)+'% de '+fdBRL(D.meta), W-M, y+8, {align:'right'});
+    doc.setFillColor(230,225,215); doc.roundedRect(M, y+14, CW, 9, 4, 4, 'F');
+    doc.setFillColor(C.acc[0], C.acc[1], C.acc[2]); doc.roundedRect(M, y+14, Math.max(8, CW*Math.min(pct,1)), 9, 4, 4, 'F');
+    y += 34;
+    const falta = Math.max(0, D.meta - D.acum);
+    const diaria = D.restantes > 0 ? falta / D.restantes : 0;
+    cards([
+      ['Faturamento '+fdDataBR(D.dia), fdBRL(D.fat.dia), 'hoje'],
+      ['Acumulado do mês', fdBRL(D.acum), 'total acumulado'],
+      ['Falta para a meta', fdBRL(falta), 'restante no mês', falta > 0 ? RED : GRN],
+      ['Meta diária necessária', D.restantes > 0 ? fdBRL(diaria) : '—', D.restantes+' dias restantes no mês']
+    ]);
+  } else {
+    cards([['Faturamento '+fdDataBR(D.dia), fdBRL(D.fat.dia), 'hoje'], ['Acumulado do mês', fdBRL(D.acum), 'meta do mês não definida']]);
+  }
+
+  /* ---- 02 resultados ---- */
+  sec('02', 'Resultados financeiros');
+  const tk = function(f, p){ return p > 0 ? fdBRL(f/p) : '—'; };
+  const bebTot = D.T.a.totalBebidas + D.T.j.totalBebidas;
+  const icbF = function(t){ const v = fdIcb(D,t); return v == null ? '—' : fdNum(v,2); };
+  tabela(['Indicador','Almoço','Jantar','Total do dia'], [
+    ['Faturamento (caixa)', fdBRL(D.fat.a), fdBRL(D.fat.j), fdBRL(D.fat.dia)],
+    ['Clientes (PAX)', paxA ? String(paxA) : '—', paxJ ? String(paxJ) : '—', paxD ? String(paxD) : '—'],
+    ['Ticket médio por cliente', tk(D.fat.a,paxA), tk(D.fat.j,paxJ), tk(D.fat.dia,paxD)],
+    ['Bebidas vendidas', String(D.T.a.totalBebidas), String(D.T.j.totalBebidas), String(bebTot)],
+    ['ICB (bebidas por pessoa)', icbF('a'), icbF('j'), icbF('dia')]
+  ], null, {1:R,2:R,3:R});
+  if(D.det){
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+    y -= 8;
+    doc.text('Allfood (Detalhamento financeiro): venda bruta '+fdBRL(D.det.bruto)+'  ·  total recebido '+fdBRL(D.det.recebido)+(D.det.comandasPagas ? '  ·  '+D.det.comandasPagas+' comandas pagas' : '')+(D.det.pessoas ? '  ·  '+D.det.pessoas+' pessoas' : ''), M, y);
+    y += 16;
+  }
+
+  /* ---- 03 formas de recebimento ---- */
+  sec('03', 'Formas de recebimento');
+  const formas = D.det ? (D.det.formas || []).filter(function(f){ return Math.abs(f.teorico) > 0.004 || Math.abs(f.auditado) > 0.004; }) : [];
+  if(formas.length){
+    tabela(['Forma','Valor teórico','Valor auditado','Diferença'], formas.map(function(f){ return [f.forma, fdBRL(f.teorico), fdBRL(f.auditado), fdBRL(f.dif)]; }),
+      ['TOTAL', fdBRL(D.det.totTeorico), fdBRL(D.det.totAuditado), fdBRL(D.det.totDif)], {1:R,2:R,3:R},
+      {didParseCell: function(d){ if(d.section==='body' && d.column.index===3){ const v = formas[d.row.index]; if(v && Math.abs(v.dif) > 0.004) d.cell.styles.textColor = RED; } }});
+  } else {
+    doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+    doc.text(D.det ? 'Sem recebimentos registrados no detalhamento.' : 'Detalhamento financeiro não enviado.', M, y+8); y += 24;
+  }
+
+  /* ---- 04 cancelamentos ---- */
+  sec('04', 'Cancelamentos');
+  if(D.C.tem){
+    const pc = D.fat.dia > 0 ? D.C.total / D.fat.dia * 100 : 0;
+    cards([
+      ['Total cancelado (itens)', fdBRL(D.C.total), fdNum(pc,1)+'% do faturamento', D.C.total > 0 ? RED : GRN],
+      ['Itens cancelados', String(D.C.qtd), D.C.linhas+' lançamentos'],
+      ['Taxa de serviço cancelada', fdBRL(D.C.servico), 'não entra no total'],
+      ['Com desperdício', fdBRL(D.C.desperdicio), 'itens preparados', D.C.desperdicio > 0 ? AMB : GRN]
+    ]);
+    const motivos = Object.keys(D.C.porMotivo).sort(function(a,b){ return D.C.porMotivo[b].v - D.C.porMotivo[a].v; });
+    if(motivos.length) tabela(['Motivo','Itens','Valor'], motivos.map(function(m){ return [m, String(D.C.porMotivo[m].q), fdBRL(D.C.porMotivo[m].v)]; }), null, {1:R,2:R});
+    const vends = Object.keys(D.C.porVendedor).sort(function(a,b){ return D.C.porVendedor[b].v - D.C.porVendedor[a].v; }).slice(0,6);
+    if(vends.length) tabela(['Por vendedor','Itens','Valor'], vends.map(function(v){ return [v, String(D.C.porVendedor[v].q), fdBRL(D.C.porVendedor[v].v)]; }), null, {1:R,2:R});
+    if(D.C.maiores.length) tabela(['Maiores cancelamentos','Vendedor','Motivo','Valor'], D.C.maiores.map(function(r){ return [r.item+(r.qtde>1?' x'+r.qtde:''), r.vendedor || r.operador, r.motivo, fdBRL(r.valor)]; }), null, {3:R});
+  } else {
+    doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+    doc.text('Relatório de cancelamentos não enviado.', M, y+8); y += 24;
+  }
+
+  /* ---- 05 descontos ---- */
+  sec('05', 'Descontos');
+  const dt = D.det ? D.det.descTotal : (D.desc.itens + D.desc.servico);
+  const pd = D.fat.dia > 0 ? dt / D.fat.dia * 100 : 0;
+  cards([
+    ['Total em descontos', fdBRL(dt), fdNum(pd,1)+'% do faturamento', dt > 0 ? AMB : GRN],
+    ['Em itens', fdBRL(D.det ? D.det.descItens : D.desc.itens), 'descontos nos itens'],
+    ['Em comandas', fdBRL(D.det ? D.det.descComandas : D.desc.servico), D.det ? 'inclui isenção de serviço' : 'isenção de serviço'],
+    ['Cortesias (100%)', String(D.desc.cortesias), 'itens sem cobrança']
+  ]);
+  const dv = Object.keys(D.desc.porVendedor).sort(function(a,b){ return D.desc.porVendedor[b] - D.desc.porVendedor[a]; }).slice(0,6);
+  if(dv.length) tabela(['Descontos em itens por vendedor','Valor'], dv.map(function(v){ return [v, fdBRL(D.desc.porVendedor[v])]; }), null, {1:R});
+
+  /* ---- 06 ICB ---- */
+  sec('06', 'Bebidas e ICB — índice de conversão de bebidas');
+  const gl = FD_GRUPOS_BEBIDA.filter(function(g){ return (D.T.a.bebidas[g]||0) + (D.T.j.bebidas[g]||0) > 0; });
+  tabela(['Categoria','Almoço','Jantar','Total'], gl.map(function(g){ const a = D.T.a.bebidas[g]||0, j = D.T.j.bebidas[g]||0; return [g, String(a), String(j), String(a+j)]; }),
+    ['TOTAL DE BEBIDAS', String(D.T.a.totalBebidas), String(D.T.j.totalBebidas), String(bebTot)], {1:R,2:R,3:R});
+  const icbBox = function(rot, t, x, w){
+    const v = fdIcb(D,t); const ok = v != null && v >= ICB_META;
+    const col = v == null ? MUT : (ok ? GRN : RED);
+    doc.setFillColor(BEGE[0], BEGE[1], BEGE[2]); doc.roundedRect(x, y, w, 62, 6, 6, 'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(MUT[0], MUT[1], MUT[2]); doc.text(rot, x+w/2, y+13, {align:'center'});
+    doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(col[0], col[1], col[2]); doc.text(v == null ? '—' : fdNum(v,2), x+w/2, y+37, {align:'center'});
+    doc.setFontSize(7.5); doc.text(v == null ? 'informe os clientes (PAX)' : (ok ? 'META ATINGIDA (mín. '+fdNum(ICB_META,1)+')' : 'ABAIXO DA META (mín. '+fdNum(ICB_META,1)+')'), x+w/2, y+53, {align:'center'});
+  };
+  ensure(72);
+  const bw = (CW - 16) / 3;
+  icbBox('ICB ALMOÇO','a', M, bw); icbBox('ICB JANTAR','j', M+bw+8, bw); icbBox('ICB DO DIA','dia', M+2*(bw+8), bw);
+  y += 76;
+
+  /* ---- 07 top produtos ---- */
+  const itens = {};
+  ['a','j'].forEach(function(t){ Object.keys(D.T[t].itens).forEach(function(k){ const o = itens[k] || (itens[k] = {q:0, v:0}); o.q += D.T[t].itens[k].q; o.v += D.T[t].itens[k].v; }); });
+  const top = Object.keys(itens).sort(function(a,b){ return itens[b].q - itens[a].q; }).slice(0,10);
+  if(top.length){
+    sec('07', 'Produtos mais vendidos');
+    tabela(['Produto','Qtde','Valor'], top.map(function(k){ return [k, String(itens[k].q), fdBRL(itens[k].v)]; }), null, {1:R,2:R});
+  }
+
+  /* ---- 08 equipe ---- */
+  sec('08', 'Gestão de equipe');
+  const eqv = function(t, k){ const o = (D.op && (t==='a' ? D.op.almoco : D.op.jantar)) || {}; return Number((o.equipe||{})[k])||0; };
+  const eqTot = function(t){ return FD_CARGOS.reduce(function(s,c){ return s + eqv(t,c[0]); }, 0); };
+  const salao = function(t){ return eqv(t,'garcons') + eqv(t,'cumins'); };
+  const rat = function(p, e){ return e > 0 && p > 0 ? fdNum(p/e,1) : '—'; };
+  tabela(['Equipe','Almoço','Jantar'], FD_CARGOS.map(function(c){ return [c[1], String(eqv('a',c[0])), String(eqv('j',c[0]))]; }),
+    ['TOTAL DA EQUIPE', String(eqTot('a')), String(eqTot('j'))], {1:R,2:R});
+  tabela(['Indicador','Almoço','Jantar'], [
+    ['Clientes (PAX)', paxA ? String(paxA) : '—', paxJ ? String(paxJ) : '—'],
+    ['PAX por colaborador (equipe total)', rat(paxA, eqTot('a')), rat(paxJ, eqTot('j'))],
+    ['PAX por garçom/cumim (salão)', rat(paxA, salao('a')), rat(paxJ, salao('j'))]
+  ], null, {1:R,2:R});
+
+  /* ---- 09 relatos ---- */
+  sec('09', 'Relatos da operação');
+  const relato = function(rot, t){
+    const o = (D.op && (t==='a' ? D.op.almoco : D.op.jantar)) || {};
+    const blocos = [['Resumo', o.resumo], ['Erros e problemas', o.erros], ['Acertos e destaques', o.acertos]];
+    ensure(40);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(C.dark[0], C.dark[1], C.dark[2]);
+    doc.text(rot+' — Ger. '+D.gerente, M, y+8); y += 18;
+    blocos.forEach(function(b){
+      const txt = (b[1] && b[1].trim()) ? b[1].trim() : '—';
+      const linhas = doc.splitTextToSize(txt, CW - 20);
+      let i = 0;
+      ensure(30);
+      const cor = b[0]==='Erros e problemas' ? RED : (b[0]==='Acertos e destaques' ? GRN : MUT);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(cor[0], cor[1], cor[2]);
+      doc.text(b[0].toUpperCase(), M, y+6); y += 14;
+      doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(TXT[0], TXT[1], TXT[2]);
+      while(i < linhas.length){
+        ensure(14);
+        const n = Math.max(1, Math.min(linhas.length - i, Math.floor((H - 46 - y) / 12.5)));
+        doc.text(linhas.slice(i, i+n), M+8, y+8, {lineHeightFactor: 1.3});
+        y += n*12.5 + 4; i += n;
+      }
+      y += 6;
+    });
+    y += 6;
+  };
+  relato('ALMOÇO', 'a');
+  relato('JANTAR', 'j');
+
+  /* ---- rodapé ---- */
+  const pages = doc.getNumberOfPages();
+  for(let p=1;p<=pages;p++){
+    doc.setPage(p);
+    doc.setDrawColor(220,215,205); doc.line(M, H-34, W-M, H-34);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(MUT[0], MUT[1], MUT[2]);
+    doc.text('MASHA GROUP · '+D.unidade.toUpperCase()+' · DASHBOARD OPERACIONAL '+fdDataBR(D.dia), M, H-22);
+    doc.text('PAG. '+p+' / '+pages, W-M, H-22, {align:'right'});
+  }
+  const nome = 'Dashboard_'+(texas ? 'Texas' : 'Cali')+'_'+D.dia+'.pdf';
+  return {doc: doc, blob: doc.output('blob'), nome: nome, texto: fdTextoWhats(D), paginas: pages};
+}
+
+/* ---------- botões ---------- */
+async function fdGerarDashboard(){
+  const perfil = sessionStorage.getItem('perfilAtivo');
+  if(perfil!=='master' && perfil!=='gerente') return;
+  const btn = document.getElementById('fd-gen-btn'), res = document.getElementById('fd-gen-result');
+  const slug = fdSlug(), dia = fdDia();
+  if(btn){ btn.disabled = true; btn.textContent = 'Gerando dashboard...'; }
+  try{
+    await fdSalvar(true);
+    const D = await fdConstruir(slug, dia);
+    if(!D.temVendas){ toast('⚠️ Sem vendas importadas para '+fdDataBR(dia)); }
+    const pdf = await fdGerarPdf(D);
+    fdPdfCache = pdf;
+    const url = URL.createObjectURL(pdf.blob);
+    if(res) res.innerHTML = '<div class="ri"><div class="ri-name">Dashboard de '+fdDataBR(dia)+' pronto ('+pdf.paginas+' páginas)</div><div class="ri-cat"><a href="'+url+'" target="_blank" download="'+pdf.nome+'" style="color:var(--or);font-weight:600">⬇️ Baixar / abrir o PDF</a></div></div>';
+    const w = document.getElementById('fd-wa-btn'); if(w) w.disabled = false;
+    toast('✅ Dashboard gerado');
+  }catch(err){
+    if(res) res.innerHTML = '<div class="ri"><div class="badge br">Erro: '+escapeHtml(String((err && err.message) || err))+'</div></div>';
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '📄 Gerar dashboard (PDF)'; }
+  }
+}
+async function fdEnviarWhatsapp(){
+  if(!fdPdfCache){ toast('Gere o dashboard primeiro'); return; }
+  const p = fdPdfCache;
+  const file = new File([p.blob], p.nome, {type:'application/pdf'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title: p.nome, text: p.texto});
+      return;
+    }
+  }catch(e){
+    if(e && e.name === 'AbortError') return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(p.blob); a.download = p.nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('PDF baixado — anexe no grupo do WhatsApp');
+  setTimeout(function(){ window.open('https://wa.me/?text='+encodeURIComponent(p.texto), '_blank'); }, 600);
+}
+
 function renderFechamentosFinanceirosList(){
   const el = document.getElementById('fechamento-recent-list');
   if(!el) return;
