@@ -1675,6 +1675,7 @@ async function importarVendasFiles(){
         resultados.push({fileName:file.name, error:'Cabeçalho "VENDA Nº" não encontrado nesta planilha.'});
         continue;
       }
+      parsed.unidade = getUnidadeAtual(); // o Allfood do Texas vem com o nome da empresa Cali: vale a unidade selecionada no app
       if(!parsed.unidade){
         resultados.push({fileName:file.name, needsUnit:true, dataRows:parsed.dataRows, empresaDetectada:parsed.empresaNome});
         continue;
@@ -2758,11 +2759,7 @@ async function parseCancelamentosFile(file){
 
 /* ---------- uploads ---------- */
 function fdVerificaUnidade(empresa){
-  const un = fdUnidadeDoArquivo(empresa);
-  if(un && un !== getUnidadeAtual()){
-    toast('⚠️ Arquivo é de '+un+' e você está em '+getUnidadeAtual());
-    return false;
-  }
+  // O nome da empresa no Allfood não identifica a unidade (o Texas sai como Cali): vale a unidade selecionada no app.
   return true;
 }
 async function importarCancelamentos(){
