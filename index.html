@@ -2862,14 +2862,18 @@ async function fdConstruir(slug, dia){
   const res = await Promise.all([
     Promise.all(dias.map(function(d){ return VENDAS_REF.child(slug).child(d).once('value'); })),
     FECH_DIA_REF.child(slug).child(dia).once('value'),
-    METAS_REF.child(slug).child(mes).once('value')
+    METAS_REF.child(slug).child(mes).once('value'),
+    db.ref('gestao_acum_base').child(slug).child(mes).once('value')
   ]);
   const byDay = {}; dias.forEach(function(d, i){ byDay[d] = res[0][i].val() || {}; });
   const fech = res[1].val() || {};
-  let acum = 0, fatDia = 0;
+  const base = res[3].val();
+  const usaBase = !!(base && base.ate && dia >= base.ate && base.valor != null);
+  let acum = usaBase ? Number(base.valor) : 0, fatDia = 0;
   for(let k=1;k<=diaNum;k++){
     const f = fdLinhasOp(byDay[dias[k-1]], byDay[dias[k]]).reduce(function(s,x){ return s + (Number(x.r.vLiquida)||0); }, 0);
-    acum += f; if(k===diaNum) fatDia = f;
+    if(!usaBase || dias[k] > base.ate) acum += f;
+    if(k===diaNum) fatDia = f;
   }
   const linhas = fdLinhasOp(byDay[dias[diaNum-1]], byDay[dias[diaNum]]);
   const novoT = function(){ return {fat:0, bebidas:{}, totalBebidas:0, itens:{}}; };
