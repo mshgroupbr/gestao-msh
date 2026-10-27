@@ -2617,7 +2617,24 @@ function fdMontarForm(){
       '<div class="field"><label class="fl">Acertos e destaques</label><textarea id="fd-acertos-'+t+'" rows="3" placeholder="O que funcionou bem, elogios, vendas de destaque..."></textarea></div>' +
       '</details>';
   };
-  el.innerHTML = bloco('a','☀️ Almoço', true) + bloco('j','🌙 Jantar', true);
+  el.innerHTML = '<div class="card" style="margin-bottom:10px"><button type="button" class="btn-or" id="fd-hostess-btn" onclick="fdPuxarComandas()">🎟️ Puxar comandas da noite (Hostess)</button><div id="fd-hostess-info" style="font-size:12px;margin-top:8px;opacity:.85">Conta as comandas registradas na Hostess no dia e preenche os clientes (PAX) do Jantar — base do ticket médio.</div></div>' + bloco('a','☀️ Almoço', true) + bloco('j','🌙 Jantar', true);
+}
+function fdPuxarComandas(){
+  const slug = fdSlug(), dia = fdDia();
+  const base = String(slug).toLowerCase().indexOf('texas') >= 0 ? 'https://reservas-texas-default-rtdb.firebaseio.com' : 'https://cali-reservas-default-rtdb.firebaseio.com';
+  const info = document.getElementById('fd-hostess-info'), btn = document.getElementById('fd-hostess-btn');
+  if(info) info.textContent = 'Buscando comandas da Hostess de '+fdDataBR(dia)+'...';
+  if(btn) btn.disabled = true;
+  fetch(base+'/hostess/visitas/'+dia+'.json?x='+Date.now()).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }).then(function(v){
+    const lista = v ? Object.keys(v).map(function(k){ return v[k]; }).filter(function(x){ return x && x.entradaTs; }) : [];
+    const noite = lista.filter(function(x){ return new Date(x.entradaTs).getHours() >= 16 || new Date(x.entradaTs).getHours() < 6; }).length;
+    const antes = lista.length - noite;
+    if(!lista.length){ if(info) info.textContent = '⚠️ Nenhuma comanda registrada na Hostess em '+fdDataBR(dia)+'. Informe o PAX manualmente.'; return; }
+    const e = document.getElementById('fd-pax-j'); if(e) e.value = noite;
+    if(info) info.innerHTML = '✅ <b>'+noite+' comandas</b> na noite (Hostess, '+fdDataBR(dia)+')'+(antes?(' · '+antes+' antes das 16h não contadas'):'')+'. Preenchido em Jantar → Clientes (PAX). Toque em salvar para gravar.';
+  }).catch(function(err){
+    if(info) info.textContent = '⚠️ Não foi possível buscar a Hostess ('+err.message+'). Tente de novo.';
+  }).then(function(){ if(btn) btn.disabled = false; });
 }
 function fdColetarTurno(t){
   const eq = {};
