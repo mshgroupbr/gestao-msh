@@ -1348,18 +1348,23 @@ var vdBusca = null;
 function vdTextoBusca(B){
   const un = B.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
   const per = B.ini===B.fim ? fdDataBR(B.ini) : fdDataBR(B.ini)+' a '+fdDataBR(B.fim);
+  const nomes = {bebida:'Bebidas / drinks', entrada:'Entradas', principal:'Pratos principais', sobremesa:'Sobremesas'};
   if(B.modo==='todos'){
-    let t = '*'+un.toUpperCase()+' — Vendedores*\n📅 '+per+'\n\n🏆 *Ranking*\n';
-    B.ranking.filter(function(e){ return vdN(e[0])!=='CAIXA' && e[0].indexOf('(sem')!==0; }).slice(0,10).forEach(function(e,i){ t += (i+1)+'º '+e[0]+' — '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' itens)\n'; });
+    let t = '*'+un.toUpperCase()+' - Vendedores*\nPeríodo: '+per+'\n\n*Ranking*\n';
+    B.ranking.filter(function(e){ return vdN(e[0])!=='CAIXA' && e[0].indexOf('(sem')!==0; }).slice(0,10).forEach(function(e,i){ t += (i+1)+'º '+e[0]+' - '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' itens)\n'; });
+    t += '\n*Maior vendedor por categoria*\n';
+    ['bebida','entrada','principal','sobremesa'].forEach(function(k){
+      const d = B.dest && B.dest[k];
+      t += nomes[k]+': '+(d ? d.nome+' - '+fdBRL(d.v)+' ('+fdNum(d.q)+' un.)' : 'sem vendas')+'\n';
+    });
     return t;
   }
-  const nomes = {bebida:'🍹 Bebidas', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
-  let t = '*'+un.toUpperCase()+' — '+B.vend+'*\n📅 '+per+'\n';
-  t += '💰 Vendeu: *'+fdBRL(B.total)+'* | Itens: '+fdNum(B.itens)+'\n';
-  t += '📈 '+B.nd+' dia(s) com venda | Média/dia: '+fdBRL(B.total/B.nd)+'\n\n';
+  let t = '*'+un.toUpperCase()+' - '+B.vend+'*\nPeríodo: '+per+'\n';
+  t += 'Vendeu: *'+fdBRL(B.total)+'* | Itens: '+fdNum(B.itens)+'\n';
+  t += B.nd+' dia(s) com venda | Média/dia: '+fdBRL(B.total/B.nd)+'\n\n*Por categoria*\n';
   Object.keys(nomes).forEach(function(k){ t += nomes[k]+': '+fdBRL(B.tipos[k]||0)+'\n'; });
-  t += '\n⭐ *Mais vendidos*\n';
-  B.top.forEach(function(e){ t += '• '+e[0]+' — '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' un.)\n'; });
+  t += '\n*Mais vendidos*\n';
+  B.top.forEach(function(e){ t += '- '+e[0]+' - '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' un.)\n'; });
   return t;
 }
 function vdWhatsBusca(){
@@ -1387,7 +1392,7 @@ async function vdBuscarVendedor(){
       if(fdEhServico(item)) return;
       const nome = (r.vendedor||'').toString().trim() || '(sem vendedor)';
       const vl = Number(r.vLiquida)||0, q = Number(r.quantidade)||0;
-      const pv = porVend[nome] || (porVend[nome] = {v:0,q:0}); pv.v += vl; pv.q += q;
+      const pv = porVend[nome] || (porVend[nome] = {v:0,q:0,c:{bebida:{v:0,q:0},entrada:{v:0,q:0},principal:{v:0,q:0},sobremesa:{v:0,q:0}}}); pv.v += vl; pv.q += q; const t0 = vdTipoItem(item); if(pv.c[t0]){ pv.c[t0].v += vl; pv.c[t0].q += q; }
       if(vend && nome !== vend) return;
       total += vl; itens += q;
       porDia[d] = (porDia[d]||0) + vl;
@@ -1403,8 +1408,17 @@ async function vdBuscarVendedor(){
     Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).forEach(function(e,i){
       h += '<div class="rank-item"><div class="rank-pos">'+(i+1)+'.</div><div class="rank-nome">'+escapeHtml(e[0])+'<div style="font-size:11px;opacity:.65">'+fdNum(e[1].q)+' itens</div></div><div class="rank-val">'+fdBRL(e[1].v)+'</div></div>';
     });
-    vdBusca = {modo:'todos', slug:slug, ini:ini, fim:fim, ranking:Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; })};
-    box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+fdDataBR(ini)+' a '+fdDataBR(fim)+' · escolha um vendedor para ver o detalhe</div>' + '<button class="btn-sm" style="background:#25d366;color:#fff;border-color:#25d366;margin:8px 0" onclick="vdWhatsBusca()">📲 Enviar no WhatsApp</button>' + h + '</div>';
+    const rankArr = Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; });
+    const dest = {}; let destHtml = '<div class="sec-l">Maior vendedor por categoria</div>';
+    const rotulos = {bebida:'🍹 Bebidas / drinks', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
+    ['bebida','entrada','principal','sobremesa'].forEach(function(k){
+      const L = rankArr.filter(function(e){ return vdN(e[0])!=='CAIXA' && e[0].indexOf('(sem')!==0 && e[1].c[k].v>0; }).sort(function(a,b){ return b[1].c[k].v-a[1].c[k].v; });
+      dest[k] = L[0] ? {nome:L[0][0], v:L[0][1].c[k].v, q:L[0][1].c[k].q} : null;
+      destHtml += '<div class="rank-item"><div class="rank-pos">🏆</div><div class="rank-nome">'+rotulos[k]+'<div style="font-size:11px;opacity:.65">'+(dest[k] ? escapeHtml(dest[k].nome) : 'sem vendas')+'</div></div><div class="rank-val">'+(dest[k] ? fdBRL(dest[k].v)+' <span style="font-size:11px;opacity:.65">· '+fdNum(dest[k].q)+' un.</span>' : '')+'</div></div>';
+    });
+    destHtml += '<div class="sec-l">Ranking geral</div>';
+    vdBusca = {modo:'todos', slug:slug, ini:ini, fim:fim, ranking:rankArr, dest:dest};
+    box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+fdDataBR(ini)+' a '+fdDataBR(fim)+' · escolha um vendedor para ver o detalhe</div>' + destHtml + '<button class="btn-sm" style="background:#25d366;color:#fff;border-color:#25d366;margin:8px 0" onclick="vdWhatsBusca()">📲 Enviar no WhatsApp</button>' + h + '</div>';
     return;
   }
   h += '<div class="dash-grid">' +
@@ -1421,18 +1435,18 @@ async function vdBuscarVendedor(){
 }
 function vdTextoWhats(S){
   const un = S.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
-  let t = '*'+un.toUpperCase()+' — Vendedores de '+vdMesNome(S.mes)+'*\n';
-  t += '🎯 Meta: '+fdBRL(S.meta)+' | Realizado: *'+fdBRL(S.realizado)+'*'+(S.pct!=null ? ' (*'+fdNum(S.pct,1)+'%*)' : '')+'\n';
-  t += '📈 Média/dia: '+fdBRL(S.mediaDia)+' | Projeção: '+fdBRL(S.projecao)+'\n';
+  let t = '*'+un.toUpperCase()+' - Vendedores de '+vdMesNome(S.mes)+'*\n';
+  t += 'Meta: '+fdBRL(S.meta)+' | Realizado: *'+fdBRL(S.realizado)+'*'+(S.pct!=null ? ' (*'+fdNum(S.pct,1)+'%*)' : '')+'\n';
+  t += 'Média/dia: '+fdBRL(S.mediaDia)+' | Projeção: '+fdBRL(S.projecao)+'\n';
   const falta = Math.max(0, (S.meta||0) - S.realizado);
-  if(S.restantes>0 && falta>0) t += '⏳ Falta '+fdBRL(falta)+' ('+fdBRL(falta/S.restantes)+'/dia nos '+S.restantes+' dias)\n';
-  t += '\n🏆 *Quem mais vende*\n';
-  S.vendedores.slice(0,5).forEach(function(o,i){ t += (i+1)+'º '+o.nome+' — '+fdBRL(o.v)+'\n'; });
-  const nomes = {bebida:'🍹 Bebidas', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
-  t += '\n*Destaques*\n';
+  if(S.restantes>0 && falta>0) t += 'Falta '+fdBRL(falta)+' ('+fdBRL(falta/S.restantes)+'/dia nos '+S.restantes+' dias)\n';
+  t += '\n*Quem mais vende*\n';
+  S.vendedores.slice(0,5).forEach(function(o,i){ t += (i+1)+'º '+o.nome+' - '+fdBRL(o.v)+'\n'; });
+  const nomes = {bebida:'Bebidas / drinks', entrada:'Entradas', principal:'Pratos principais', sobremesa:'Sobremesas'};
+  t += '\n*Maior vendedor por categoria*\n';
   ['bebida','entrada','principal','sobremesa'].forEach(function(k){
     const p = (S.destaques[k]||[])[0];
-    if(p) t += nomes[k]+': '+p.nome+' — '+fdBRL(p.v)+' ('+fdNum(p.q)+' un.)\n';
+    t += nomes[k]+': '+(p ? p.nome+' - '+fdBRL(p.v)+' ('+fdNum(p.q)+' un.)' : 'sem vendas')+'\n';
   });
   return t;
 }
