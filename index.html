@@ -625,6 +625,14 @@ body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
   </div>
 </div>
 
+<div class="screen" id="s-vendedores">
+  <div class="hdr">
+    <button class="back" onclick="goTo('s-home')">‹</button>
+    <div class="htxt"><h1>Vendedores</h1><p id="vd-sub"></p></div>
+  </div>
+  <div class="body" id="vd-body"></div>
+</div>
+
 <div class="screen" id="s-painel-vivo">
   <div class="hdr">
     <button class="back" onclick="goTo('s-home')">‹</button>
@@ -713,6 +721,7 @@ function goTo(id){
   if(id==='s-gerentes') renderGerentesScreen();
   if(id==='s-vendas-import') renderVendasImportScreen();
   if(id==='s-relatorios') renderRelatoriosScreen();
+  if(id==='s-vendedores'){ const _s=document.getElementById('vd-sub'); if(_s) _s.textContent=getUnidadeAtual(); renderHomeTabVendedores(sessionStorage.getItem('perfilAtivo'), document.getElementById('vd-body')); }
   if(id==='s-painel-vivo') renderPainelVivoScreen();
   if(id==='s-ponto') renderPontoScreen();
   atualizarLayoutTela(id);
@@ -1101,7 +1110,12 @@ function renderHome(){
       '<div style="font-size:38px;margin-bottom:8px">🌙</div>' +
       '<div style="font-size:18px;font-weight:700;margin-bottom:6px">Fechamento Noturno</div>' +
       '<div style="font-size:13px;opacity:.7;margin-bottom:16px">Enviar os 2 relatórios do Allfood de hoje:<br>1) Vendas (.xlsx) · 2) Detalhamento financeiro (.xlsx)</div>' +
-      '<button class="btn-or" style="width:100%">Enviar relatórios</button></div>';
+      '<button class="btn-or" style="width:100%">Enviar relatórios</button></div>' +
+      '<div class="card" style="text-align:center;padding:22px 18px;cursor:pointer" onclick="goTo(\'s-vendedores\')">' +
+      '<div style="font-size:34px;margin-bottom:6px">🏆</div>' +
+      '<div style="font-size:17px;font-weight:700;margin-bottom:6px">Vendedores e meta do mês</div>' +
+      '<div style="font-size:13px;opacity:.7;margin-bottom:14px">Meta, acompanhamento, ranking e destaques por categoria</div>' +
+      '<button class="btn-or" style="width:100%">Ver vendedores</button></div>';
     return;
   }
   if(_tabsEl) _tabsEl.style.display = '';
@@ -1159,6 +1173,7 @@ function renderHomeTabVendedores(perfil, body){
           vdMesesLista().map(function(m){ return '<option value="'+m+'"'+(m===vdMesSel?' selected':'')+'>'+vdMesNome(m)+'</option>'; }).join('') +
         '</select>' +
         '<button class="btn-sm" onclick="vdCarregar(true)">↻ Recalcular e salvar</button>' +
+        '<button class="btn-sm" style="background:#25d366;color:#fff;border-color:#25d366" onclick="vdWhats()">📲 Enviar no WhatsApp</button>' +
       '</div>' +
       (master ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><label class="fl" style="margin:0">Meta do mês (R$)</label><input type="number" id="vd-meta" inputmode="numeric" style="width:130px"><button class="btn-sm" onclick="vdSalvarMeta()">Salvar meta</button></div>' : '') +
     '</div>' +
@@ -1284,7 +1299,7 @@ function vdHtml(S, origem){
     h += '</div>';
   });
   h += '<div style="font-size:11px;opacity:.6;margin:4px 2px">'+(origem==='salvo' ? 'Fotografia salva' : 'Calculado e salvo agora')+' em '+new Date(S.geradoEm).toLocaleString('pt-BR')+' por '+escapeHtml(S.geradoPor||'—')+'. Serviço fica fora das categorias; couvert e adicionais também.</div>';
-  h += '<div class="sec-l">Pratos e classificação</div><div class="card"><button class="btn-sm" onclick="vdRevisar()">Revisar classificação dos pratos</button><div id="vd-rev"></div></div>';
+  if(sessionStorage.getItem('perfilAtivo')==='master') h += '<div class="sec-l">Pratos e classificação</div><div class="card"><button class="btn-sm" onclick="vdRevisar()">Revisar classificação dos pratos</button><div id="vd-rev"></div></div>';
   return h;
 }
 async function vdHistoricoHtml(slug){
@@ -1318,6 +1333,27 @@ async function vdRevisar(){
     return '<div style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:12px"><span style="flex:1">'+escapeHtml(a.nome)+'<br><span style="opacity:.6">'+fdBRL(a.v)+'</span></span><select onchange="vdSetTipo(this)" data-n="'+escapeHtml(a.nome)+'">' +
       VD_TIPOS.map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===t?' selected':'')+'>'+x[1]+'</option>'; }).join('') + '</select></div>';
   }).join('') + '<button class="btn-sm" style="margin-top:8px" onclick="vdCarregar(true)">Aplicar e recalcular</button>';
+}
+function vdTextoWhats(S){
+  const un = S.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
+  let t = '*'+un.toUpperCase()+' — Vendedores de '+vdMesNome(S.mes)+'*\n';
+  t += '🎯 Meta: '+fdBRL(S.meta)+' | Realizado: *'+fdBRL(S.realizado)+'*'+(S.pct!=null ? ' (*'+fdNum(S.pct,1)+'%*)' : '')+'\n';
+  t += '📈 Média/dia: '+fdBRL(S.mediaDia)+' | Projeção: '+fdBRL(S.projecao)+'\n';
+  const falta = Math.max(0, (S.meta||0) - S.realizado);
+  if(S.restantes>0 && falta>0) t += '⏳ Falta '+fdBRL(falta)+' ('+fdBRL(falta/S.restantes)+'/dia nos '+S.restantes+' dias)\n';
+  t += '\n🏆 *Quem mais vende*\n';
+  S.vendedores.slice(0,5).forEach(function(o,i){ t += (i+1)+'º '+o.nome+' — '+fdBRL(o.v)+'\n'; });
+  const nomes = {bebida:'🍹 Bebidas', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
+  t += '\n*Destaques*\n';
+  ['bebida','entrada','principal','sobremesa'].forEach(function(k){
+    const p = (S.destaques[k]||[])[0];
+    if(p) t += nomes[k]+': '+p.nome+' — '+fdBRL(p.v)+' ('+fdNum(p.q)+' un.)\n';
+  });
+  return t;
+}
+function vdWhats(){
+  if(!vdSnapAtual || !vdSnapAtual.diasComVenda){ toast('Sem dados para enviar'); return; }
+  window.open('https://wa.me/?text='+encodeURIComponent(vdTextoWhats(vdSnapAtual)), '_blank');
 }
 function vdSetTipo(sel){
   const nome = sel.getAttribute('data-n'); const key = vdN(nome).replace(/[^A-Z0-9]+/g,'_').slice(0,80);
@@ -3550,7 +3586,7 @@ function baixarFechamentoFinanceiro(slug, dia){
 
 /* ================= MODO CELULAR / COMPUTADOR ================= */
 var SIDE_MASTER = [['s-home','🏠','Início'],['s-custos','💰','Custos'],['s-notas-fiscais','🧾','Notas Fiscais'],['s-gerentes','👥','Gerentes'],['s-vendas-import','📊','Importar Vendas'],['s-relatorios','📈','Relatórios'],['s-painel-vivo','🔄','Painel ao vivo'],['s-freelancers-panel','📋','Freelancers'],['s-ponto','🕐','Ponto / Frequência']];
-var SIDE_GERENTE = [['s-home','🏠','Início'],['s-vendas-import','🌙','Fechamento Noturno']];
+var SIDE_GERENTE = [['s-home','🏠','Início'],['s-vendas-import','🌙','Fechamento Noturno'],['s-vendedores','🏆','Vendedores']];
 var TELAS_SEM_MENU = ['s-unidade','s-perfil','s-login-master','s-login-gerente'];
 function modoTelaAtual(){
   let m = null; try{ m = localStorage.getItem('modoTela'); }catch(e){}
