@@ -1268,7 +1268,7 @@ function vdHtml(S, origem){
   const totV = S.vendedores.reduce(function(s,o){ return s+o.v; }, 0) || 1;
   S.vendedores.forEach(function(o,i){
     const medal = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':String(i+1)+'.'));
-    h += '<div class="rank-item"><div class="rank-pos">'+medal+'</div><div class="rank-nome">'+escapeHtml(o.nome)+'<div style="font-size:11px;opacity:.65">'+o.cmd+' comandas · '+fdNum(o.q)+' itens · ticket '+fdBRL(o.cmd ? o.v/o.cmd : 0)+' · '+fdNum(o.v/totV*100,1)+'%</div></div><div class="rank-val">'+fdBRL(o.v)+'</div></div>';
+    h += '<div class="rank-item"><div class="rank-pos">'+medal+'</div><div class="rank-nome">'+escapeHtml(o.nome)+'<div style="font-size:11px;opacity:.65">'+fdNum(o.q)+' itens · '+fdNum(o.v/totV*100,1)+'% do total</div></div><div class="rank-val">'+fdBRL(o.v)+'</div></div>';
   });
   h += '</div>';
   if(S.caixa>0 || S.semVendedor>0) h += '<div style="font-size:11px;opacity:.65;margin:6px 2px">Fora do ranking: caixa '+fdBRL(S.caixa)+(S.semVendedor>0 ? ' · sem vendedor '+fdBRL(S.semVendedor) : '')+'.</div>';
