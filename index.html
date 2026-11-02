@@ -874,7 +874,7 @@ function renderHomeTabVisao(perfil, body){
       '<div class="welcome-txt">Gestão Master — '+unidade+'</div>'+
       '<div class="quick-stat-grid">'+
         '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--gr-l);color:var(--gr)">💵</div><div class="quick-stat-l">Venda hoje</div><div class="quick-stat-v" id="home-venda-hoje">…</div></div>'+
-        '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--am-l);color:var(--am)">🧮</div><div class="quick-stat-l">CMV hoje</div><div class="quick-stat-v" id="home-cmv-hoje">…</div></div>'+
+        '<div class="quick-stat-card"><div class="qs-ico" style="background:var(--am-l);color:var(--am)">🧮</div><div class="quick-stat-l">CMV do mês</div><div class="quick-stat-v" id="home-cmv-hoje">…</div></div>'+
       '</div>'+
       '<div class="admin-grid">'+
         '<div class="admin-card" onclick="goTo(\'s-custos\')"><div class="admin-ico" style="background:var(--am-l);color:var(--am)">💰</div><div class="admin-lb">Custos</div></div>'+
@@ -949,9 +949,10 @@ function renderHomeTabCustos(body){
   Promise.all([
     agregarVendasHome(getDatasPeriodo('30'), slug),
     CUSTOS_REF.once('value').then(function(s){return s.val()||{};}),
-    NOTAS_FISCAIS_REF.once('value').then(function(s){return s.val()||{};})
+    NOTAS_FISCAIS_REF.once('value').then(function(s){return s.val()||{};}),
+    cmvCompras(slug, fdSomaDias(formatDateLocal(new Date()), -29), formatDateLocal(new Date()))
   ]).then(function(res){
-    const d30=res[0], custos=res[1], notas=res[2];
+    const d30=res[0], custos=res[1], notas=res[2], Rcmv=res[3];
     const custosPorNome={};
     Object.values(custos).forEach(function(c){ custosPorNome[slugify(c.nome)]=c; });
     let cmvTotal=0;
@@ -977,11 +978,11 @@ function renderHomeTabCustos(body){
     }).join('') : '<div class="empty-msg">Sem dados de custo nos últimos 30 dias</div>';
     const notasArr=Object.values(notas).sort(function(a,b){return (b.data||'').localeCompare(a.data||'');}).slice(0,3);
     const notasHtml=notasArr.length ? notasArr.map(function(n){
-      return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(n.fornecedor||'—')+'</div><div class="prod-qtd">'+fmtMoney(Number(n.valor)||0)+'</div></div>';
+      return '<div class="prod-item"><div class="prod-nome">'+escapeHtml(n.fornecedor||'—')+'</div><div class="prod-qtd">'+fmtMoney(Number(n.valorTotal)||0)+'</div></div>';
     }).join('') : '<div class="empty-msg">Nenhuma nota fiscal lançada ainda</div>';
     body.innerHTML=
       '<div class="kpi-row">'+
-        '<div class="kpi-card"><div class="kpi-l">CMV (30 dias)</div><div class="kpi-v">'+cmvPct.toFixed(1)+'%</div></div>'+
+        '<div class="kpi-card"><div class="kpi-l">CMV por compras</div><div class="kpi-v">'+(Rcmv.pct!=null ? Rcmv.pct.toFixed(1)+'%' : '—')+'</div>'+(Rcmv.notas ? '' : '<div style="font-size:11px;opacity:.65">sem notas no período</div>')+'</div>'+
         '<div class="kpi-card"><div class="kpi-l">Sem custo cadastrado</div><div class="kpi-v">'+semCusto+'</div></div>'+
         '<div class="kpi-card"><div class="kpi-l">Com divergência</div><div class="kpi-v">'+comDivergencia+'</div></div>'+
         '<div class="kpi-card"><div class="kpi-l">Maior categoria</div><div class="kpi-v" style="font-size:14px">'+escapeHtml(maiorCategoria)+'</div></div>'+
@@ -2136,34 +2137,50 @@ function renderRelatoriosConteudo(linhas, semHorarioIgnoradas){
     calcularESetarCmv(porItem, vendaLiquida);
   }
 }
+const CMV_FORA = ['limpeza'];
+async function cmvCompras(slug, ini, fim){
+  const todas = Object.values((await NOTAS_FISCAIS_REF.once('value')).val() || {}).filter(function(n){ return n && n.local===slug && n.data; });
+  const ultima = todas.map(function(n){ return n.data; }).sort().pop() || null;
+  const R = {slug:slug, ini:ini, fim:fim, ultima:ultima, fimEf:fim, compras:0, limpeza:0, venda:0, pct:null, porCat:{}, notas:0, truncado:false};
+  if(!ultima || ultima < ini) return R;
+  if(ultima < fim){ R.fimEf = ultima; R.truncado = true; }
+  todas.forEach(function(n){
+    if(n.data < ini || n.data > R.fimEf) return;
+    const v = Number(n.valorTotal)||0;
+    if(CMV_FORA.indexOf(n.categoria) >= 0){ R.limpeza += v; return; }
+    R.compras += v; R.notas++;
+    const c = n.categoria || 'outros'; R.porCat[c] = (R.porCat[c]||0) + v;
+  });
+  const dias = []; for(let d = ini, k = 0; d <= R.fimEf && k < 70; d = fdSomaDias(d, 1), k++) dias.push(d);
+  const arq = await Promise.all(dias.map(function(d){ return VENDAS_REF.child(slug).child(d).once('value').then(function(s){ return s.val() || {}; }); }));
+  arq.forEach(function(o){ Object.values(o).forEach(function(r){ if(!r || fdEhServico(r.item)) return; R.venda += Number(r.vLiquida)||0; }); });
+  R.pct = (R.compras > 0 && R.venda > 0) ? R.compras / R.venda * 100 : null;
+  return R;
+}
+function cmvHtml(R){
+  let h = '<div class="sec-l">CMV real (compras ÷ venda)</div>';
+  if(!R.notas){
+    return h + '<div class="empty-msg">Sem notas fiscais lançadas neste período'+(R.ultima ? ' (última nota lançada: '+fdDataBR(R.ultima)+')' : '')+'. Lance as notas para ver o CMV.</div>';
+  }
+  h += '<div class="dash-grid">' +
+    '<div class="dash-card"><div class="dash-card-l">Compras (notas)</div><div class="dash-card-v">'+fmtMoney(R.compras)+'</div></div>' +
+    '<div class="dash-card"><div class="dash-card-l">Venda líquida (sem serviço)</div><div class="dash-card-v">'+fmtMoney(R.venda)+'</div></div>' +
+    '<div class="dash-card"><div class="dash-card-l">CMV %</div><div class="dash-card-v">'+(R.pct!=null ? R.pct.toFixed(1)+'%' : '—')+'</div></div>' +
+  '</div>';
+  if(R.truncado) h += '<div class="badge ba" style="display:block;margin-bottom:8px">Notas lançadas só até '+fdDataBR(R.ultima)+'. O CMV considera '+fdDataBR(R.ini)+' a '+fdDataBR(R.fimEf)+' (venda e compras no mesmo intervalo).</div>';
+  h += '<div class="sec-l">Compras por categoria</div>';
+  Object.entries(R.porCat).sort(function(a,b){ return b[1]-a[1]; }).forEach(function(e){
+    h += '<div class="rank-item"><div class="rank-nome">'+escapeHtml(e[0])+'</div><div class="rank-val">'+fmtMoney(e[1])+' <span style="font-size:11px;opacity:.65">· '+(R.venda>0 ? (e[1]/R.venda*100).toFixed(1) : '0')+'% da venda</span></div></div>';
+  });
+  if(R.limpeza>0) h += '<div style="font-size:11px;opacity:.65;margin:6px 2px">Limpeza ('+fmtMoney(R.limpeza)+') fica fora do CMV. Não considera variação de estoque.</div>';
+  else h += '<div style="font-size:11px;opacity:.65;margin:6px 2px">Não considera variação de estoque.</div>';
+  return h;
+}
 function calcularESetarCmv(porItem, vendaLiquida){
-  CUSTOS_REF.once('value').then(snap=>{
-    const custos=snap.val()||{};
-    let cmvTotal=0;
-    const semCusto=[];
-    Object.entries(porItem).forEach(([nomeItem,dados])=>{
-      const slug=slugify(nomeItem);
-      const entry=custos[slug];
-      const custoUnit = entry ? (Number(entry.custo_ficha_tecnica)||0) : 0;
-      if(entry && custoUnit>0){
-        cmvTotal += custoUnit*dados.quantidade;
-      } else {
-        semCusto.push(nomeItem);
-      }
-    });
-    const cmvPct = vendaLiquida>0 ? (cmvTotal/vendaLiquida*100) : 0;
-    let html='<div class="sec-l">CMV real</div><div class="dash-grid">'+
-      '<div class="dash-card"><div class="dash-card-l">CMV total</div><div class="dash-card-v">'+fmtMoney(cmvTotal)+'</div></div>'+
-      '<div class="dash-card"><div class="dash-card-l">CMV %</div><div class="dash-card-v">'+cmvPct.toFixed(1)+'%</div></div>'+
-    '</div>';
-    if(semCusto.length>0){
-      html+='<div class="sec-l">Itens vendidos sem custo cadastrado</div>';
-      semCusto.forEach(nome=>{
-        html+='<div class="badge br" style="display:block;margin-bottom:6px">'+escapeHtml(nome)+'</div>';
-      });
-    }
-    const sec=document.getElementById('cmv-section');
-    if(sec) sec.innerHTML=html;
+  const slug = unidadeParaSlug(getUnidadeAtual());
+  const datas = getDatasPeriodo(relatoriosPeriodoAtual).slice().sort();
+  cmvCompras(slug, datas[0], datas[datas.length-1]).then(function(R){
+    const sec = document.getElementById('cmv-section'); if(sec) sec.innerHTML = cmvHtml(R);
   });
 }
 
@@ -2348,17 +2365,9 @@ function carregarHomeQuickStatsMaster(){
     });
     const vEl=document.getElementById('home-venda-hoje');
     if(vEl) vEl.textContent=fmtMoney(vendaLiquida);
-    CUSTOS_REF.once('value').then(csnap=>{
-      const custos=csnap.val()||{};
-      let cmvTotal=0;
-      Object.entries(porItem).forEach(([nomeItem,dados])=>{
-        const slugItem=slugify(nomeItem);
-        const entry=custos[slugItem];
-        const custoUnit = entry ? (Number(entry.custo_ficha_tecnica)||0) : 0;
-        if(entry && custoUnit>0) cmvTotal += custoUnit*dados.quantidade;
-      });
+    cmvCompras(slug, hoje.slice(0,8)+'01', hoje).then(function(R){
       const cEl=document.getElementById('home-cmv-hoje');
-      if(cEl) cEl.textContent=fmtMoney(cmvTotal);
+      if(cEl) cEl.textContent = R.pct!=null ? R.pct.toFixed(1)+'%' : 'sem notas';
     });
   });
 }
