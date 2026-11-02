@@ -1300,6 +1300,7 @@ function vdHtml(S, origem){
     h += '</div>';
   });
   h += '<div style="font-size:11px;opacity:.6;margin:4px 2px">'+(origem==='salvo' ? 'Fotografia salva' : 'Calculado e salvo agora')+' em '+new Date(S.geradoEm).toLocaleString('pt-BR')+' por '+escapeHtml(S.geradoPor||'—')+'. Serviço fica fora das categorias; couvert e adicionais também.</div>';
+  h += vdFiltroHtml(S);
   if(sessionStorage.getItem('perfilAtivo')==='master') h += '<div class="sec-l">Pratos e classificação</div><div class="card"><button class="btn-sm" onclick="vdRevisar()">Revisar classificação dos pratos</button><div id="vd-rev"></div></div>';
   return h;
 }
@@ -1334,6 +1335,65 @@ async function vdRevisar(){
     return '<div style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:12px"><span style="flex:1">'+escapeHtml(a.nome)+'<br><span style="opacity:.6">'+fdBRL(a.v)+'</span></span><select onchange="vdSetTipo(this)" data-n="'+escapeHtml(a.nome)+'">' +
       VD_TIPOS.map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===t?' selected':'')+'>'+x[1]+'</option>'; }).join('') + '</select></div>';
   }).join('') + '<button class="btn-sm" style="margin-top:8px" onclick="vdCarregar(true)">Aplicar e recalcular</button>';
+}
+function vdFiltroHtml(S){
+  const ini = S.mes+'-01', fim = S.ultimoDia || (S.mes+'-'+String(S.diasNoMes).padStart(2,'0'));
+  return '<div class="sec-l">🔎 Vendas por vendedor</div><div class="card">' +
+    '<div class="field" style="margin:0 0 8px"><label class="fl">Vendedor</label><select id="vd-f-vend"><option value="">Todos (ranking do período)</option>' +
+      S.vendedores.map(function(o){ return '<option value="'+escapeHtml(o.nome)+'">'+escapeHtml(o.nome)+'</option>'; }).join('') + '</select></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="date" id="vd-f-ini" value="'+ini+'"><span style="font-size:12px;opacity:.7">até</span><input type="date" id="vd-f-fim" value="'+fim+'"><button class="btn-sm" onclick="vdBuscarVendedor()">Buscar</button></div>' +
+    '<div id="vd-f-res" style="margin-top:10px"></div></div>';
+}
+async function vdBuscarVendedor(){
+  const box = document.getElementById('vd-f-res'); if(!box) return;
+  const slug = slugAtual();
+  const vend = document.getElementById('vd-f-vend').value;
+  const ini = document.getElementById('vd-f-ini').value, fim = document.getElementById('vd-f-fim').value;
+  if(!ini || !fim || fim < ini){ box.innerHTML = '<div class="empty-msg">Informe um período válido.</div>'; return; }
+  box.innerHTML = '<div class="empty-msg">Buscando...</div>';
+  await new Promise(function(res){ carregarProdutoCategoriaCache(res); });
+  await vdCarregarOver();
+  const dias = []; for(let d = ini, k = 0; d <= fdSomaDias(fim,1) && k < 95; d = fdSomaDias(d,1), k++) dias.push(d);
+  const arq = await Promise.all(dias.map(function(d){ return VENDAS_REF.child(slug).child(d).once('value').then(function(s){ return s.val() || {}; }); }));
+  const by = {}; dias.forEach(function(d,i){ by[d] = arq[i]; });
+  const porDia = {}, porItem = {}, porVend = {}; const tipos = {bebida:0, entrada:0, principal:0, sobremesa:0};
+  let total = 0, itens = 0;
+  dias.forEach(function(d){
+    if(d > fim) return;
+    fdLinhasOp(by[d], by[fdSomaDias(d,1)]).forEach(function(x){
+      const r = x.r; const item = (r.item||'').toString();
+      if(fdEhServico(item)) return;
+      const nome = (r.vendedor||'').toString().trim() || '(sem vendedor)';
+      const vl = Number(r.vLiquida)||0, q = Number(r.quantidade)||0;
+      const pv = porVend[nome] || (porVend[nome] = {v:0,q:0}); pv.v += vl; pv.q += q;
+      if(vend && nome !== vend) return;
+      total += vl; itens += q;
+      porDia[d] = (porDia[d]||0) + vl;
+      const it = porItem[item] || (porItem[item] = {q:0,v:0}); it.q += q; it.v += vl;
+      const t = vdTipoItem(item); if(tipos[t] != null) tipos[t] += vl;
+    });
+  });
+  if(!total){ box.innerHTML = '<div class="empty-msg">Nenhuma venda encontrada.</div>'; return; }
+  const nd = Object.keys(porDia).length;
+  let h = '';
+  if(!vend){
+    h += '<div class="rank-list">';
+    Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).forEach(function(e,i){
+      h += '<div class="rank-item"><div class="rank-pos">'+(i+1)+'.</div><div class="rank-nome">'+escapeHtml(e[0])+'<div style="font-size:11px;opacity:.65">'+fdNum(e[1].q)+' itens</div></div><div class="rank-val">'+fdBRL(e[1].v)+'</div></div>';
+    });
+    box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+fdDataBR(ini)+' a '+fdDataBR(fim)+' · escolha um vendedor para ver o detalhe</div>' + h + '</div>';
+    return;
+  }
+  h += '<div class="dash-grid">' +
+    '<div class="dash-card"><div class="dash-card-l">Vendeu</div><div class="dash-card-v">'+fdBRL(total)+'</div></div>' +
+    '<div class="dash-card"><div class="dash-card-l">Itens</div><div class="dash-card-v">'+fdNum(itens)+'</div></div>' +
+    '<div class="dash-card"><div class="dash-card-l">Dias com venda</div><div class="dash-card-v">'+nd+'</div></div>' +
+    '<div class="dash-card"><div class="dash-card-l">Média por dia</div><div class="dash-card-v">'+fdBRL(total/nd)+'</div></div></div>';
+  const nomes = {bebida:'🍹 Bebidas', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
+  h += '<div class="sec-l">Por categoria</div>' + Object.keys(tipos).map(function(k){ return '<div class="rank-item"><div class="rank-nome">'+nomes[k]+'</div><div class="rank-val">'+fdBRL(tipos[k])+'</div></div>'; }).join('');
+  h += '<div class="sec-l">Por dia</div>' + Object.keys(porDia).sort().reverse().map(function(d){ return '<div class="rank-item"><div class="rank-nome">'+fdDataBR(d).slice(0,5)+'</div><div class="rank-val">'+fdBRL(porDia[d])+'</div></div>'; }).join('');
+  h += '<div class="sec-l">Itens mais vendidos</div>' + Object.keys(porItem).map(function(k){ return [k, porItem[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).slice(0,15).map(function(e){ return '<div class="rank-item"><div class="rank-nome">'+escapeHtml(e[0])+'</div><div class="rank-val">'+fdBRL(e[1].v)+' <span style="font-size:11px;opacity:.65">· '+fdNum(e[1].q)+' un.</span></div></div>'; }).join('');
+  box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px"><b>'+escapeHtml(vend)+'</b> · '+fdDataBR(ini)+' a '+fdDataBR(fim)+'</div>' + h;
 }
 function vdTextoWhats(S){
   const un = S.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
