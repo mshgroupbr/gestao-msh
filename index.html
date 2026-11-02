@@ -1344,6 +1344,28 @@ function vdFiltroHtml(S){
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="date" id="vd-f-ini" value="'+ini+'"><span style="font-size:12px;opacity:.7">até</span><input type="date" id="vd-f-fim" value="'+fim+'"><button class="btn-sm" onclick="vdBuscarVendedor()">Buscar</button></div>' +
     '<div id="vd-f-res" style="margin-top:10px"></div></div>';
 }
+var vdBusca = null;
+function vdTextoBusca(B){
+  const un = B.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
+  const per = B.ini===B.fim ? fdDataBR(B.ini) : fdDataBR(B.ini)+' a '+fdDataBR(B.fim);
+  if(B.modo==='todos'){
+    let t = '*'+un.toUpperCase()+' — Vendedores*\n📅 '+per+'\n\n🏆 *Ranking*\n';
+    B.ranking.filter(function(e){ return vdN(e[0])!=='CAIXA' && e[0].indexOf('(sem')!==0; }).slice(0,10).forEach(function(e,i){ t += (i+1)+'º '+e[0]+' — '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' itens)\n'; });
+    return t;
+  }
+  const nomes = {bebida:'🍹 Bebidas', entrada:'🥗 Entradas', principal:'🍽️ Pratos principais', sobremesa:'🍰 Sobremesas'};
+  let t = '*'+un.toUpperCase()+' — '+B.vend+'*\n📅 '+per+'\n';
+  t += '💰 Vendeu: *'+fdBRL(B.total)+'* | Itens: '+fdNum(B.itens)+'\n';
+  t += '📈 '+B.nd+' dia(s) com venda | Média/dia: '+fdBRL(B.total/B.nd)+'\n\n';
+  Object.keys(nomes).forEach(function(k){ t += nomes[k]+': '+fdBRL(B.tipos[k]||0)+'\n'; });
+  t += '\n⭐ *Mais vendidos*\n';
+  B.top.forEach(function(e){ t += '• '+e[0]+' — '+fdBRL(e[1].v)+' ('+fdNum(e[1].q)+' un.)\n'; });
+  return t;
+}
+function vdWhatsBusca(){
+  if(!vdBusca){ toast('Faça uma busca antes'); return; }
+  window.open('https://wa.me/?text='+encodeURIComponent(vdTextoBusca(vdBusca)), '_blank');
+}
 async function vdBuscarVendedor(){
   const box = document.getElementById('vd-f-res'); if(!box) return;
   const slug = slugAtual();
@@ -1381,7 +1403,8 @@ async function vdBuscarVendedor(){
     Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).forEach(function(e,i){
       h += '<div class="rank-item"><div class="rank-pos">'+(i+1)+'.</div><div class="rank-nome">'+escapeHtml(e[0])+'<div style="font-size:11px;opacity:.65">'+fdNum(e[1].q)+' itens</div></div><div class="rank-val">'+fdBRL(e[1].v)+'</div></div>';
     });
-    box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+fdDataBR(ini)+' a '+fdDataBR(fim)+' · escolha um vendedor para ver o detalhe</div>' + h + '</div>';
+    vdBusca = {modo:'todos', slug:slug, ini:ini, fim:fim, ranking:Object.keys(porVend).map(function(k){ return [k, porVend[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; })};
+    box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+fdDataBR(ini)+' a '+fdDataBR(fim)+' · escolha um vendedor para ver o detalhe</div>' + '<button class="btn-sm" style="background:#25d366;color:#fff;border-color:#25d366;margin:8px 0" onclick="vdWhatsBusca()">📲 Enviar no WhatsApp</button>' + h + '</div>';
     return;
   }
   h += '<div class="dash-grid">' +
@@ -1393,7 +1416,8 @@ async function vdBuscarVendedor(){
   h += '<div class="sec-l">Por categoria</div>' + Object.keys(tipos).map(function(k){ return '<div class="rank-item"><div class="rank-nome">'+nomes[k]+'</div><div class="rank-val">'+fdBRL(tipos[k])+'</div></div>'; }).join('');
   h += '<div class="sec-l">Por dia</div>' + Object.keys(porDia).sort().reverse().map(function(d){ return '<div class="rank-item"><div class="rank-nome">'+fdDataBR(d).slice(0,5)+'</div><div class="rank-val">'+fdBRL(porDia[d])+'</div></div>'; }).join('');
   h += '<div class="sec-l">Itens mais vendidos</div>' + Object.keys(porItem).map(function(k){ return [k, porItem[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).slice(0,15).map(function(e){ return '<div class="rank-item"><div class="rank-nome">'+escapeHtml(e[0])+'</div><div class="rank-val">'+fdBRL(e[1].v)+' <span style="font-size:11px;opacity:.65">· '+fdNum(e[1].q)+' un.</span></div></div>'; }).join('');
-  box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px"><b>'+escapeHtml(vend)+'</b> · '+fdDataBR(ini)+' a '+fdDataBR(fim)+'</div>' + h;
+  vdBusca = {modo:'um', slug:slug, vend:vend, ini:ini, fim:fim, total:total, itens:itens, nd:nd, tipos:tipos, top:Object.keys(porItem).map(function(k){ return [k, porItem[k]]; }).sort(function(a,b){ return b[1].v-a[1].v; }).slice(0,5)};
+  box.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:6px"><b>'+escapeHtml(vend)+'</b> · '+fdDataBR(ini)+' a '+fdDataBR(fim)+'</div>' + '<button class="btn-sm" style="background:#25d366;color:#fff;border-color:#25d366;margin:8px 0" onclick="vdWhatsBusca()">📲 Enviar no WhatsApp</button>' + h;
 }
 function vdTextoWhats(S){
   const un = S.slug==='texas' ? 'Texas Country Bar' : 'Cali Cravings';
