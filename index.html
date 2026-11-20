@@ -910,7 +910,7 @@ async function rgColetar(slug, iv){
       if(fdEhServico(item)){ serv += vl; return; }
       fat += vl;
       const vd = (r.vendedor||'').toString().trim() || '(sem vendedor)';
-      if(vdN(vd)==='CAIXA'){ caixa += vl; return; }
+      
       const o = V[vd] || (V[vd] = {nome:vd, v:0, dias:{}});
       o.v += vl; o.dias[d] = (o.dias[d]||0) + vl;
     });
@@ -969,78 +969,163 @@ function rgTexto(D){
   if(D.semImport.length) t += '\n_Sem importação: '+D.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', ')+'_\n';
   return t;
 }
-async function rgPdfUnidade(D){
-  const jsPDF = window.jspdf.jsPDF; const doc = new jsPDF({unit:'pt', format:'a4'});
-  const W = 595.28, H = 841.89, M = 30, CW = W-2*M; const c = RG_COR[D.slug];
-  const logo = await fdCarregarImagem(D.slug==='texas' ? 'icon-texas.png' : 'icon-cali.png');
-  const dark = D.slug==='texas' ? [122,31,31] : [44,62,53];
-  doc.setFillColor(dark[0],dark[1],dark[2]); doc.rect(0,0,W,78,'F'); let tx = M;
-  if(logo){ doc.addImage(logo.data,'PNG',M,16,46,46); tx = M+58; }
-  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.text(D.un.toUpperCase(), tx, 38);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('RELATÓRIO DE VENDAS  ·  '+D.iv.rot.toUpperCase(), tx, 56);
-  let y = 96;
-  const kp = [['Vendido', fdBRL(D.total)], ['Média por dia', fdBRL(D.media)], ['Melhor dia', D.melhor ? fdDataBR(D.melhor.d).slice(0,5)+' · '+fdBRL(D.melhor.v) : '-'], [D.meta ? 'Meta do mês' : 'Serviço (10%)', D.meta ? fdNum(D.total/D.meta*100,1)+'% de '+fdBRL(D.meta) : fdBRL(D.serv)]];
-  const bw = (CW-3*8)/4;
-  kp.forEach(function(k,i){
-    const x = M+i*(bw+8); doc.setFillColor(245,240,232); doc.roundedRect(x,y,bw,48,4,4,'F');
-    doc.setTextColor(102,102,96); doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.text(k[0], x+8, y+16);
-    doc.setTextColor(26,26,26); doc.setFont('helvetica','bold'); doc.setFontSize(k[1].length>16?9.5:12); doc.text(k[1], x+8, y+36);
+var RG_W = 1754, RG_H = 1240, RG_PT = 150/72;
+var RG_NAVY = '#1F3864', RG_LB = '#5B7DB1', RG_OR = '#E07B39', RG_GR = '#2E7D32', RG_CC = '#2a78d6', RG_CT = '#eb6834';
+var RG_TAB10 = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf','#1f77b4','#ff7f0e'];
+function rgCv(){ const cv = document.createElement('canvas'); cv.width = RG_W; cv.height = RG_H; const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0,0,RG_W,RG_H); return {cv:cv, c:c}; }
+function rgT(c, t, x, y, o){
+  o = o || {}; c.save(); c.fillStyle = o.col || '#222'; c.font = (o.b?'bold ':'')+Math.round((o.s||10)*RG_PT)+'px Arial, Helvetica, sans-serif';
+  c.textAlign = o.al || 'left'; c.textBaseline = o.bl || 'alphabetic';
+  if(o.rot){ c.translate(x,y); c.rotate(o.rot); c.fillText(t,0,0); } else c.fillText(t,x,y);
+  c.restore();
+}
+function rgR(fx, fy, fw, fh){ return {x:fx*RG_W, y:RG_H*(1-fy-fh), w:fw*RG_W, h:fh*RG_H}; }
+function rgTitulo(c, t, s){ rgT(c, t, 0.04*RG_W, RG_H*(1-0.95), {s:18, b:true, col:RG_NAVY}); rgT(c, s, 0.04*RG_W, RG_H*(1-0.915), {s:10, col:'#666'}); }
+function rgTicks(max){
+  if(!(max>0)) max = 1;
+  const raw = max/6, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw/p;
+  const st = (m<=1?1:m<=2?2:m<=2.5?2.5:m<=5?5:10)*p; const t = []; for(let v=0;;v+=st){ t.push(v); if(v>=max-st*0.001) break; }
+  return {t:t, top:t[t.length-1]};
+}
+function rgBRLc(v){ return 'R$ '+fdNum(v,0); }
+function rgFrame(c, r, left, bottom){
+  c.save(); c.strokeStyle = '#222'; c.lineWidth = 1.6; c.beginPath();
+  if(left){ c.moveTo(r.x, r.y); c.lineTo(r.x, r.y+r.h); } if(bottom){ c.moveTo(r.x, r.y+r.h); c.lineTo(r.x+r.w, r.y+r.h); } c.stroke(); c.restore();
+}
+function rgYAxis(c, r, tk, fmt, size){
+  c.save(); c.strokeStyle = '#222'; c.lineWidth = 1.4;
+  tk.t.forEach(function(v){ const y = r.y + r.h - r.h*v/tk.top; c.beginPath(); c.moveTo(r.x-7, y); c.lineTo(r.x, y); c.stroke(); rgT(c, fmt(v), r.x-12, y, {s:size||9, al:'right', bl:'middle', col:'#333'}); });
+  c.restore();
+}
+function rgXLabels(c, r, labs, size){
+  const n = labs.length, sw = r.w/n;
+  labs.forEach(function(l,i){ const x = r.x + sw*(i+0.5); const ls = (''+l).split('\n'); ls.forEach(function(t,k){ rgT(c, t, x, r.y+r.h+22+k*(size||9)*RG_PT*1.15, {s:size||9, al:'center', col:'#333'}); }); });
+}
+function rgNm(n){ return n.replace(' HOSTESS','').toLowerCase().replace(/(^|\s)\S/g, function(s){ return s.toUpperCase(); }); }
+function rgDiaLab(d){ return fdDataBR(d).slice(0,5)+'\n'+fdDiaSemana(d).charAt(0)+fdDiaSemana(d).slice(1,3).toLowerCase(); }
+function rgSub(D){ const a = D.dias[0], b = D.dias[D.dias.length-1]; return D.iv.rot+' · '+fdDataBR(a).slice(0,5)+' a '+fdDataBR(b).slice(0,5)+' · vendas líquidas (sem serviço)'; }
+function rgPag1(D){
+  const P = rgCv(), c = P.c; rgTitulo(c, D.un+' · Vendas por dia', rgSub(D));
+  const r = rgR(0.07,0.12,0.86,0.72), n = D.dias.length, vals = D.porDia.map(function(x){ return x.v; });
+  const tk = rgTicks(Math.max.apply(null, vals)*1.12), sw = r.w/n, bw = sw*0.8;
+  rgYAxis(c, r, tk, rgBRLc, 9); rgFrame(c, r, true, true); rgT(c, 'R$', r.x-108, r.y+r.h/2, {s:10, al:'center', rot:-Math.PI/2, col:'#333'});
+  D.porDia.forEach(function(x,i){
+    const cx = r.x+sw*(i+0.5), h = r.h*x.v/tk.top, y = r.y+r.h-h;
+    if(x.sem){ rgT(c, 'sem', cx, r.y+r.h-36, {s:7, al:'center', col:'#C00000'}); rgT(c, 'import.', cx, r.y+r.h-22, {s:7, al:'center', col:'#C00000'}); return; }
+    c.fillStyle = x.v >= D.media ? RG_NAVY : RG_LB; c.fillRect(cx-bw/2, y, bw, h);
+    rgT(c, rgBRLc(x.v), cx, y-8, {s:8, al:'center', col:'#222'});
   });
-  y += 62;
-  doc.setTextColor(dark[0],dark[1],dark[2]); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Vendas por dia', M, y); y += 6;
-  const ih = 190; doc.addImage(await rgChartDias(D, 1000, 360), 'PNG', M, y, CW, ih); y += ih+14;
-  doc.setTextColor(dark[0],dark[1],dark[2]); doc.text('Ranking de vendedores', M, y); y += 6;
-  const rk = await rgChartRank(D, 1000); const rh = Math.min(rk.h*CW/1000, 250);
-  if(y + rh > H-90){ doc.addPage(); y = 40; }
-  doc.addImage(rk.img, 'PNG', M, y, CW, rh); y += rh+12;
-  const total = D.total || 1; const cab = ['Vendedor','Vendido','% do total','Dias','Média/dia'];
-  const corpo = D.vend.map(function(o){ const n = Object.keys(o.dias).length; return [o.nome, fdBRL(o.v), fdNum(o.v/total*100,1)+'%', String(n), fdBRL(o.v/n)]; });
-  if(D.caixa) corpo.push(['Caixa (terminal)', fdBRL(D.caixa), fdNum(D.caixa/total*100,1)+'%', '-', '-']);
-  doc.autoTable({startY:y, head:[cab], body:corpo, margin:{left:M,right:M}, styles:{fontSize:9, cellPadding:4}, headStyles:{fillColor:dark}, alternateRowStyles:{fillColor:[250,248,244]}});
-  y = doc.lastAutoTable.finalY + 14;
-  if(D.dias.length <= 8 && D.vend.length){
-    const hd = ['Vendedor'].concat(D.dias.map(rgLabelDia)); 
-    const bd = D.vend.map(function(o){ return [o.nome].concat(D.dias.map(function(d){ return o.dias[d] ? fdNum(o.dias[d],0) : '-'; })); });
-    bd.push(['TOTAL'].concat(D.porDia.map(function(x){ return x.v ? fdNum(x.v,0) : '-'; })));
-    if(y > H-140){ doc.addPage(); y = 40; }
-    doc.setTextColor(dark[0],dark[1],dark[2]); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Vendedor por dia (R$)', M, y); y += 6;
-    doc.autoTable({startY:y, head:[hd], body:bd, margin:{left:M,right:M}, styles:{fontSize:8.5, cellPadding:3}, headStyles:{fillColor:dark}, columnStyles:{0:{fontStyle:'bold'}}});
-    y = doc.lastAutoTable.finalY + 10;
+  const ya = r.y+r.h-r.h*D.media/tk.top; c.save(); c.setLineDash([10,7]); c.strokeStyle = RG_OR; c.lineWidth = 1.6; c.beginPath(); c.moveTo(r.x, ya); c.lineTo(r.x+r.w, ya); c.stroke(); c.restore();
+  rgT(c, 'média '+rgBRLc(D.media)+'/dia', r.x+r.w-6, ya-8, {s:9, al:'right', col:RG_OR});
+  rgXLabels(c, r, D.dias.map(rgDiaLab), 9);
+  if(D.meta){
+    let acc = 0; const pc = vals.map(function(v){ acc += v; return acc/D.meta*100; });
+    const rmax = Math.max(30, Math.ceil(pc[pc.length-1]*1.6/10)*10);
+    c.save(); c.strokeStyle = '#222'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(r.x+r.w, r.y); c.lineTo(r.x+r.w, r.y+r.h); c.stroke(); c.restore();
+    for(let v=0; v<=rmax; v+=5){ const y = r.y+r.h-r.h*v/rmax; c.save(); c.strokeStyle = '#222'; c.beginPath(); c.moveTo(r.x+r.w, y); c.lineTo(r.x+r.w+7, y); c.stroke(); c.restore(); rgT(c, v, r.x+r.w+12, y, {s:9, bl:'middle', col:'#333'}); }
+    c.save(); c.strokeStyle = RG_GR; c.lineWidth = 3.2; c.beginPath();
+    pc.forEach(function(p,i){ const x = r.x+sw*(i+0.5), y = r.y+r.h-r.h*p/rmax; if(i===0) c.moveTo(x,y); else c.lineTo(x,y); }); c.stroke();
+    pc.forEach(function(p,i){ const x = r.x+sw*(i+0.5), y = r.y+r.h-r.h*p/rmax; c.fillStyle = RG_GR; c.beginPath(); c.arc(x,y,6,0,7); c.fill(); }); c.restore();
+    const lx = r.x+sw*(n-0.5), ly = r.y+r.h-r.h*pc[n-1]/rmax; rgT(c, fdNum(pc[n-1],1)+'%', lx, ly-16, {s:10, b:true, al:'right', col:RG_GR});
+    rgT(c, '% acumulado da meta (R$ '+fdNum(D.meta/1000,0)+' mil)', r.x+r.w+82, r.y+r.h/2, {s:10, al:'center', rot:Math.PI/2, col:RG_GR});
   }
-  if(D.semImport.length){ if(y > H-60){ doc.addPage(); y = 40; } doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(163,45,45); doc.text('Sem importação de vendas no app em: '+D.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', ')+' (os totais podem estar incompletos).', M, y); }
-  const n = doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140); doc.text('Masha Group · Gestão · '+D.un+' · página '+i+'/'+n, M, H-18); }
-  return doc.output('blob');
+  return P.cv;
 }
-async function rgPdfComparativo(A, B){
-  const jsPDF = window.jspdf.jsPDF; const doc = new jsPDF({unit:'pt', format:'a4'});
-  const W = 595.28, H = 841.89, M = 30, CW = W-2*M; const navy = [31,56,100];
-  doc.setFillColor(navy[0],navy[1],navy[2]); doc.rect(0,0,W,78,'F');
-  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('CALI x TEXAS', M, 38);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('RELATÓRIO COMPARATIVO  ·  '+A.iv.rot.toUpperCase(), M, 56);
-  let y = 96;
-  const fm = function(D){ return D.meta ? fdNum(D.total/D.meta*100,1)+'% de '+fdBRL(D.meta) : '-'; };
-  doc.autoTable({startY:y, head:[['', 'Cali Cravings', 'Texas Country Bar']], body:[
-    ['Vendido', fdBRL(A.total), fdBRL(B.total)], ['Média por dia', fdBRL(A.media), fdBRL(B.media)], ['Meta do mês', fm(A), fm(B)],
-    ['Serviço (10%)', fdBRL(A.serv), fdBRL(B.serv)], ['Melhor dia', A.melhor ? fdDataBR(A.melhor.d).slice(0,5)+' · '+fdBRL(A.melhor.v) : '-', B.melhor ? fdDataBR(B.melhor.d).slice(0,5)+' · '+fdBRL(B.melhor.v) : '-'],
-    ['Vendedores ativos', String(A.vend.length), String(B.vend.length)]], margin:{left:M,right:M}, styles:{fontSize:10, cellPadding:5}, headStyles:{fillColor:navy}, columnStyles:{0:{fontStyle:'bold'}}});
-  y = doc.lastAutoTable.finalY + 16;
-  const dias = A.dias;
-  const img = await rgChartImg({type:'bar', plugins:[], data:{labels:dias.map(rgLabelDia), datasets:[{label:'Cali', data:A.porDia.map(function(x){ return x.v||null; }), backgroundColor:'rgb(29,158,117)'},{label:'Texas', data:B.porDia.map(function(x){ return x.v||null; }), backgroundColor:'rgb(163,45,45)'}]},
-    options:{plugins:{legend:{position:'top'}}, scales:{x:{grid:{display:false}, ticks:{font:{size:10}}}, y:{ticks:{font:{size:11}, callback:function(v){ return v>=1000 ? v/1000+' mil' : v; }}}}}}, 1000, 400);
-  doc.setTextColor(navy[0],navy[1],navy[2]); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Vendas por dia', M, y); y += 6;
-  doc.addImage(img,'PNG',M,y,CW,CW*0.4); y += CW*0.4+14;
-  [[A,[29,158,117]],[B,[163,45,45]]].forEach(function(p){
-    const D = p[0]; const tot = D.total || 1;
-    if(y > H-170){ doc.addPage(); y = 40; }
-    doc.setTextColor(p[1][0],p[1][1],p[1][2]); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(D.un+' · top 5 vendedores', M, y); y += 6;
-    doc.autoTable({startY:y, head:[['Vendedor','Vendido','% da unidade']], body:D.vend.slice(0,5).map(function(o){ return [o.nome, fdBRL(o.v), fdNum(o.v/tot*100,1)+'%']; }), margin:{left:M,right:M}, styles:{fontSize:9, cellPadding:4}, headStyles:{fillColor:p[1]}});
-    y = doc.lastAutoTable.finalY + 14;
+function rgPag2(D){
+  const P = rgCv(), c = P.c; rgTitulo(c, 'Ranking de vendedores', 'Total vendido no período ('+fdDataBR(D.dias[0]).slice(0,5)+' a '+fdDataBR(D.dias[D.dias.length-1]).slice(0,5)+') e média por dia trabalhado');
+  const vs = D.vend.slice(0,12), n = vs.length, tot = D.total || 1;
+  const meds = vs.map(function(o){ return o.v/Math.max(1,Object.keys(o.dias).length); });
+  const draw = function(r, vals, cols, lab, tit, lblW){
+    const mx = Math.max.apply(null, vals)*1.55, sh = r.h/n;
+    rgT(c, tit, r.x+r.w/2, r.y-10, {s:11, al:'center', col:RG_NAVY});
+    c.save(); c.strokeStyle = '#222'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(r.x, r.y+r.h); c.moveTo(r.x, r.y+r.h); c.lineTo(r.x+r.w, r.y+r.h); c.stroke(); c.restore();
+    vs.forEach(function(o,i){ const y = r.y+sh*i, w = r.w*vals[i]/mx; c.fillStyle = cols[i]; c.fillRect(r.x, y+sh*0.1, w, sh*0.8); rgT(c, lab(o,i), r.x+w+8, y+sh/2, {s:9, bl:'middle', col:'#222'}); if(lblW) rgT(c, rgNm(o.nome), r.x-12, y+sh/2, {s:10, al:'right', bl:'middle', col:'#222'}); });
+  };
+  draw(rgR(0.17,0.10,0.34,0.76), vs.map(function(o){ return o.v; }), vs.map(function(){ return RG_NAVY; }), function(o){ return rgBRLc(o.v)+'  ('+fdNum(o.v/tot*100,1)+'%)'; }, 'Total vendido', true);
+  draw(rgR(0.62,0.10,0.34,0.76), meds, vs.map(function(o){ return Object.keys(o.dias).length < 3 ? RG_OR : RG_GR; }), function(o,i){ return rgBRLc(meds[i])+'  ('+Object.keys(o.dias).length+' dias)'; }, 'Média por dia trabalhado', false);
+  rgT(c, 'Em laranja: menos de 3 dias com venda (média pouco representativa).'+(D.semImport.length?' Sem importação em '+D.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', ')+': totais podem estar incompletos.':''), 0.04*RG_W, RG_H*(1-0.04), {s:9, col:'#666'});
+  return P.cv;
+}
+function rgCorHeat(t){
+  const st = ['#ffffcc','#ffeda0','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026']; t = Math.max(0, Math.min(1, t)); const p = t*(st.length-1), i = Math.min(st.length-2, Math.floor(p)), f = p-i;
+  const h = function(s){ return [parseInt(s.slice(1,3),16), parseInt(s.slice(3,5),16), parseInt(s.slice(5,7),16)]; }; const a = h(st[i]), b = h(st[i+1]);
+  return 'rgb('+a.map(function(x,k){ return Math.round(x+(b[k]-x)*f); }).join(',')+')';
+}
+function rgPag3(D){
+  const P = rgCv(), c = P.c; rgTitulo(c, 'Mapa de calor · vendedor por dia', 'R$ vendidos por vendedor em cada dia (apenas dias com importação)');
+  const dd = D.dias.filter(function(d,i){ return !D.porDia[i].sem; }), vs = D.vend, nr = vs.length, nc = dd.length;
+  const r = rgR(0.14,0.10,0.70,0.76), cw = r.w/nc, ch = r.h/nr; let mn = Infinity, mx = 0;
+  vs.forEach(function(o){ dd.forEach(function(d){ const v = o.dias[d]||0; if(v>0){ mn = Math.min(mn,v); mx = Math.max(mx,v); } }); });
+  vs.forEach(function(o,i){
+    rgT(c, rgNm(o.nome), r.x-12, r.y+ch*(i+0.5), {s:10, al:'right', bl:'middle', col:'#222'});
+    dd.forEach(function(d,j){ const v = o.dias[d]||0; if(v<=0) return; const x = r.x+cw*j, y = r.y+ch*i; const t = mx>mn ? (v-mn)/(mx-mn) : 1; c.fillStyle = rgCorHeat(t); c.fillRect(x, y, cw, ch);
+      rgT(c, v>=1000 ? (v/1000).toFixed(1)+'k' : Math.round(v)+'', x+cw/2, y+ch/2, {s:7.5, al:'center', bl:'middle', col:t>0.55?'#fff':'#000'}); });
   });
-  const sem = []; if(A.semImport.length) sem.push('Cali: '+A.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', ')); if(B.semImport.length) sem.push('Texas: '+B.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', '));
-  if(sem.length){ if(y > H-50){ doc.addPage(); y = 40; } doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(163,45,45); doc.text('Sem importação de vendas no app - '+sem.join(' | ')+' (totais podem estar incompletos).', M, y); }
-  const n = doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140); doc.text('Masha Group · Gestão · Cali x Texas · página '+i+'/'+n, M, H-18); }
+  dd.forEach(function(d,j){ rgT(c, fdDataBR(d).slice(0,5), r.x+cw*(j+0.5), r.y+r.h+22, {s:9, al:'center', col:'#333'}); rgT(c, fdDiaSemana(d).charAt(0)+fdDiaSemana(d).slice(1,3).toLowerCase(), r.x+cw*(j+0.5), r.y+r.h+22+9*RG_PT*1.15, {s:9, al:'center', col:'#333'}); });
+  const cb = {x:r.x+r.w+34, y:r.y, w:30, h:r.h};
+  for(let k=0;k<cb.h;k++){ c.fillStyle = rgCorHeat(1-k/cb.h); c.fillRect(cb.x, cb.y+k, cb.w, 2); }
+  const tk = rgTicks(mx); tk.t.forEach(function(v){ const t = (v-mn)/(mx-mn); if(t<0||t>1) return; const y = cb.y+cb.h-cb.h*t; rgT(c, rgBRLc(v), cb.x+cb.w+8, y, {s:9, bl:'middle', col:'#333'}); });
+  return P.cv;
+}
+function rgPag4(D){
+  const P = rgCv(), c = P.c; rgTitulo(c, 'Quem vendeu em cada dia', 'Composição das vendas do dia por vendedor');
+  const dd = D.dias.filter(function(d,i){ return !D.porDia[i].sem; }), vs = D.vend, n = dd.length;
+  const r = rgR(0.07,0.14,0.62,0.72); const tot = dd.map(function(d){ return vs.reduce(function(a,o){ return a+(o.dias[d]||0); },0); });
+  const tk = rgTicks(Math.max.apply(null, tot)*1.05), sw = r.w/n, bw = sw*0.8;
+  rgYAxis(c, r, tk, rgBRLc, 9); rgFrame(c, r, true, true);
+  dd.forEach(function(d,j){ let acc = 0; vs.forEach(function(o,k){ const v = o.dias[d]||0; if(v<=0) return; const h = r.h*v/tk.top, y = r.y+r.h-r.h*acc/tk.top-h; c.fillStyle = RG_TAB10[k%RG_TAB10.length]; c.fillRect(r.x+sw*(j+0.5)-bw/2, y, bw, h); acc += v; }); });
+  rgXLabels(c, r, dd.map(rgDiaLab), 9);
+  vs.forEach(function(o,k){ const y = r.y+20+k*30; c.fillStyle = RG_TAB10[k%RG_TAB10.length]; c.fillRect(r.x+r.w+24, y-10, 22, 16); rgT(c, rgNm(o.nome), r.x+r.w+56, y, {s:9.5, bl:'middle', col:'#222'}); });
+  return P.cv;
+}
+function rgWeekAvg(D){ const s = [0,0,0,0,0,0,0], q = [0,0,0,0,0,0,0]; D.dias.forEach(function(d,i){ if(D.porDia[i].v>0){ const p = d.split('-').map(Number); const w = (new Date(p[0],p[1]-1,p[2]).getDay()+6)%7; s[w] += D.porDia[i].v; q[w]++; } }); return s.map(function(v,i){ return q[i] ? v/q[i] : 0; }); }
+function rgPagC1(A, B){
+  const P = rgCv(), c = P.c; rgTitulo(c, 'Cali x Texas · '+A.iv.rot, 'Vendas líquidas (sem serviço), '+fdDataBR(A.dias[0]).slice(0,5)+' a '+fdDataBR(A.dias[A.dias.length-1]).slice(0,5)+' · dados importados no app Gestão Masha');
+  rgT(c, 'Cali Cravings', 0.30*RG_W, RG_H*(1-0.86), {s:13, b:true, col:RG_CC, al:'center'}); rgT(c, 'Texas Country Bar', 0.62*RG_W, RG_H*(1-0.86), {s:13, b:true, col:RG_CT, al:'center'});
+  const fm = function(D){ return D.meta ? fdNum(D.total/D.meta*100,1)+'% de '+rgBRLc(D.meta) : '-'; }, bd = function(D){ return D.melhor ? rgBRLc(D.melhor.v)+' ('+fdDataBR(D.melhor.d).slice(0,5)+')' : '-'; };
+  const cards = [['Vendido', rgBRLc(A.total), rgBRLc(B.total)], [A.meta?'% da meta':'Vendedores ativos', A.meta?fm(A):String(A.vend.length), A.meta?fm(B):String(B.vend.length)], ['Média por dia', rgBRLc(A.media), rgBRLc(B.media)], ['Serviço (10%)', rgBRLc(A.serv), rgBRLc(B.serv)], ['Melhor dia', bd(A), bd(B)]];
+  cards.forEach(function(k,i){ const y = RG_H*(1-(0.82-i*0.04)); rgT(c, k[0], 0.04*RG_W, y, {s:10, col:'#555'}); rgT(c, k[1], 0.30*RG_W, y, {s:11, b:true, al:'center'}); rgT(c, k[2], 0.62*RG_W, y, {s:11, b:true, al:'center'}); });
+  const r = rgR(0.06,0.08,0.88,0.5), n = A.dias.length, va = A.porDia.map(function(x){ return x.v; }), vb = B.porDia.map(function(x){ return x.v; });
+  const tk = rgTicks(Math.max(Math.max.apply(null,va), Math.max.apply(null,vb))*1.08), sw = r.w/n, bw = sw*0.4;
+  rgYAxis(c, r, tk, rgBRLc, 9); rgFrame(c, r, true, true);
+  for(let i=0;i<n;i++){ const cx = r.x+sw*(i+0.5); [[va[i],RG_CC,-1],[vb[i],RG_CT,0]].forEach(function(s){ const h = r.h*s[0]/tk.top; c.fillStyle = s[1]; c.fillRect(cx+(s[2]===-1?-bw:0), r.y+r.h-h, bw, h); }); }
+  rgXLabels(c, r, A.dias.map(rgDiaLab), 8.5);
+  rgT(c, 'Vendas por dia (dias em branco: sem importação)', r.x, r.y-14, {s:11, col:RG_NAVY});
+  c.fillStyle = RG_CC; c.fillRect(r.x+r.w-170, r.y+4, 26, 16); rgT(c, 'Cali', r.x+r.w-136, r.y+17, {s:10}); c.fillStyle = RG_CT; c.fillRect(r.x+r.w-86, r.y+4, 26, 16); rgT(c, 'Texas', r.x+r.w-52, r.y+17, {s:10});
+  return P.cv;
+}
+function rgPagC2(A, B){
+  const P = rgCv(), c = P.c; rgTitulo(c, 'Cali x Texas · Ritmo e equipe', (A.meta?'Progresso da meta, ':'Venda acumulada, ')+'venda por dia da semana e concentração por vendedor');
+  const n = A.dias.length, acc = function(D){ let a = 0; return D.porDia.map(function(x){ a += x.v; return D.meta ? a/D.meta*100 : a; }); }, ca = acc(A), cb = acc(B);
+  let r = rgR(0.06,0.52,0.40,0.34); const mx = Math.max(ca[n-1], cb[n-1])*1.1, tk = rgTicks(mx), sw = r.w/n;
+  rgYAxis(c, r, tk, A.meta ? function(v){ return fdNum(v,0)+'%'; } : rgBRLc, 9); rgFrame(c, r, true, true);
+  [[ca,RG_CC],[cb,RG_CT]].forEach(function(s){ c.save(); c.strokeStyle = s[1]; c.lineWidth = 3.2; c.beginPath(); s[0].forEach(function(p,i){ const x = r.x+sw*(i+0.5), y = r.y+r.h-r.h*p/tk.top; if(i===0) c.moveTo(x,y); else c.lineTo(x,y); }); c.stroke(); s[0].forEach(function(p,i){ const x = r.x+sw*(i+0.5), y = r.y+r.h-r.h*p/tk.top; c.fillStyle = s[1]; c.beginPath(); c.arc(x,y,5,0,7); c.fill(); }); c.restore(); });
+  A.dias.forEach(function(d,i){ if(n<=9 || i%2===0) rgT(c, fdDataBR(d).slice(0,5), r.x+sw*(i+0.5), r.y+r.h+22, {s:8, al:'center', col:'#333'}); });
+  rgT(c, A.meta ? '% acumulado da meta do mês' : 'Venda acumulada no período (R$)', r.x, r.y-14, {s:11, col:RG_NAVY});
+  c.fillStyle = RG_CC; c.fillRect(r.x+30, r.y+6, 26, 14); rgT(c, 'Cali', r.x+64, r.y+18, {s:10}); c.fillStyle = RG_CT; c.fillRect(r.x+30, r.y+32, 26, 14); rgT(c, 'Texas', r.x+64, r.y+44, {s:10});
+  r = rgR(0.56,0.52,0.38,0.34); const wa = rgWeekAvg(A), wb = rgWeekAvg(B), tk2 = rgTicks(Math.max(Math.max.apply(null,wa), Math.max.apply(null,wb))*1.08), sw2 = r.w/7, bw2 = sw2*0.4;
+  rgYAxis(c, r, tk2, rgBRLc, 9); rgFrame(c, r, true, true);
+  for(let i=0;i<7;i++){ const cx = r.x+sw2*(i+0.5); [[wa[i],RG_CC,-1],[wb[i],RG_CT,0]].forEach(function(s){ const h = r.h*s[0]/tk2.top; c.fillStyle = s[1]; c.fillRect(cx+(s[2]===-1?-bw2:0), r.y+r.h-h, bw2, h); }); rgT(c, ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][i], cx, r.y+r.h+22, {s:9.5, al:'center', col:'#333'}); }
+  rgT(c, 'Média por dia da semana (dias com importação)', r.x, r.y-14, {s:11, col:RG_NAVY});
+  [[A,RG_CC,0.06,'Cali'],[B,RG_CT,0.56,'Texas']].forEach(function(p){
+    const D = p[0], top = D.vend.slice(0,6), rr = rgR(p[2]+0.09,0.08,0.30,0.30), sh = rr.h/top.length, mx2 = top.length ? top[0].v*1.5 : 1, tot = D.total || 1;
+    c.save(); c.strokeStyle = '#222'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(rr.x, rr.y); c.lineTo(rr.x, rr.y+rr.h); c.moveTo(rr.x, rr.y+rr.h); c.lineTo(rr.x+rr.w, rr.y+rr.h); c.stroke(); c.restore();
+    top.forEach(function(o,i){ const y = rr.y+sh*i, w = rr.w*o.v/mx2; c.fillStyle = p[1]; c.fillRect(rr.x, y+sh*0.1, w, sh*0.8); rgT(c, rgBRLc(o.v)+' ('+fdNum(o.v/tot*100,0)+'%)', rr.x+w+8, y+sh/2, {s:8.5, bl:'middle'}); rgT(c, rgNm(o.nome), rr.x-12, y+sh/2, {s:9, al:'right', bl:'middle'}); });
+    rgT(c, p[3]+': top 6 vendedores · '+D.vend.length+' vendedores no total', rr.x, rr.y-14, {s:10, col:RG_NAVY});
+  });
+  const sem = []; if(A.semImport.length) sem.push('Cali '+A.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', ')); if(B.semImport.length) sem.push('Texas '+B.semImport.map(function(d){ return fdDataBR(d).slice(0,5); }).join(', '));
+  rgT(c, (sem.length?'Sem importação no app: '+sem.join('; ')+'. ':'')+'Metas do mês: '+(A.meta?'Cali '+rgBRLc(A.meta)+', Texas '+rgBRLc(B.meta||0)+'.':'não se aplica a este período.'), 0.04*RG_W, RG_H*(1-0.03), {s:8.5, col:'#666'});
+  return P.cv;
+}
+function rgPdfDeCanvas(cvs){
+  const jsPDF = window.jspdf.jsPDF; const doc = new jsPDF({unit:'pt', format:'a4', orientation:'landscape'});
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  cvs.forEach(function(cv,i){ if(i>0) doc.addPage('a4','landscape'); doc.addImage(cv.toDataURL('image/jpeg',0.92), 'JPEG', 0, 0, W, H); });
   return doc.output('blob');
 }
+async function rgPdfUnidade(D){ return rgPdfDeCanvas([rgPag1(D), rgPag2(D), rgPag3(D), rgPag4(D)]); }
+async function rgPdfComparativo(A, B){ return rgPdfDeCanvas([rgPagC1(A,B), rgPagC2(A,B)]); }
+
 async function rgGerar(modo){
   const box = document.getElementById('rg-result'); if(!box) return;
   box.innerHTML = '<div class="empty-msg">Gerando relatório...</div>';
