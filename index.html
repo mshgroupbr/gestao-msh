@@ -812,7 +812,7 @@ function loginGerente(){
 let homeTabAtual='visao';
 function homeTabsDisponiveis(perfil){
 return perfil==='master'
-? [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['relatorios','Relatórios'],['custos','Custos'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']]
+? [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['relatorios','Relatórios'],['insumos','Insumos'],['custos','Custos'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']]
 : [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']];
 }
 function renderHomeTabsBar(perfil){
@@ -833,6 +833,7 @@ function selecionarHomeTab(tab){
 function renderHomeTabConteudo(perfil){
   const body=document.getElementById('home-body');
   if(!body) return;
+  if(homeTabAtual==='insumos') return renderHomeTabInsumos(perfil, body);
   if(homeTabAtual==='vendas') return renderHomeTabVendas(perfil, body);
   if(homeTabAtual==='vendedores') return renderHomeTabVendedores(perfil, body);
   if(homeTabAtual==='relatorios' && perfil==='master') return renderHomeTabRelatorios(body);
@@ -859,6 +860,77 @@ function rgIntervalo(tipo, ref){
   const p = ref.split('-').map(Number); const wd = (new Date(p[0],p[1]-1,p[2]).getDay()+6)%7;
   const ini = fdSomaDias(ref,-wd), fim = fdSomaDias(ini,6);
   return {ini:ini, fim:fim, rot:'Semana de '+fdDataBR(ini).slice(0,5)+' a '+fdDataBR(fim).slice(0,5)+'/'+fim.slice(0,4)};
+}
+/* ===== INSUMOS (fichas tecnicas x vendas) ===== */
+function insNorm(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
+function insEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function insBrl(v){return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function insNum(v,d){return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});}
+function insTab(head,rows,foot,al){
+  var th='<tr>'+head.map(function(h,i){return '<th style="text-align:'+(al[i]==='R'?'right':'left')+';padding:5px 6px;background:#2c3e35;color:#fff;font-size:11px">'+h+'</th>';}).join('')+'</tr>';
+  var tr=rows.map(function(r,ri){return '<tr style="background:'+(ri%2?'#faf8f3':'#fff')+'">'+r.map(function(c,i){return '<td style="text-align:'+(al[i]==='R'?'right':'left')+';padding:4px 6px;font-size:12px;border-bottom:1px solid #eee">'+c+'</td>';}).join('')+'</tr>';}).join('');
+  var ft=foot?'<tr style="background:#e1f5ee;font-weight:700">'+foot.map(function(c,i){return '<td style="text-align:'+(al[i]==='R'?'right':'left')+';padding:5px 6px;font-size:12px">'+c+'</td>';}).join('')+'</tr>':'';
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+th+tr+ft+'</table></div>';
+}
+function insSec(n,t){return '<div style="margin:16px 0 6px;font-weight:700;font-size:13px;color:#2c3e35;border-left:4px solid #1d9e75;padding-left:8px">'+n+' &nbsp;'+t.toUpperCase()+'</div>';}
+function renderHomeTabInsumos(perfil, body){
+  var ontem=fdSomaDias(fdDiaPadrao(),-1);
+  body.innerHTML='<div class="card"><div class="field"><label class="fl">Dia da operação</label><input type="date" id="ins-dia" value="'+(window.__insDia||ontem)+'" onchange="window.__insDia=this.value;insCarregar()"></div><div id="ins-out" style="font-size:13px;color:#666">Carregando...</div></div>';
+  insCarregar();
+}
+async function insCarregar(){
+  var out=document.getElementById('ins-out'); if(!out) return;
+  var slug=slugAtual(); var dia=(document.getElementById('ins-dia')||{}).value;
+  out.textContent='Carregando...';
+  try{
+    var fs=await db.ref('gestao_fichas/'+slug+'/itens').once('value'); var fich=fs.val();
+    if(!fich){out.textContent='Esta unidade ainda não tem fichas técnicas cadastradas.';return;}
+    var vs=await VENDAS_REF.child(slug).child(dia).once('value'); var rows=Object.values(vs.val()||{});
+    if(!rows.length){out.textContent='Sem vendas importadas para '+dia+'.';return;}
+    var lk={}; Object.keys(fich).forEach(function(id){(fich[id].alias||[]).forEach(function(a){lk[a]=id;});});
+    var sold={};
+    rows.forEach(function(r){
+      var it=(r.item||'').toString(); var k=insNorm(it);
+      if(fdEhServico(it)||k.indexOf('couvert')>=0) return;
+      var s=sold[it]||(sold[it]={q:0,v:0}); s.q+=Number(r.quantidade)||0; s.v+=Number(r.vEfetiva)||0;
+    });
+    var fat=0,cov=0,itens=[],coz={},bar={},nItens=0,nOk=0;
+    Object.keys(sold).forEach(function(it){
+      var s=sold[it]; if(!s.v) return; nItens++; fat+=s.v;
+      var id=lk[insNorm(it)];
+      if(!id){itens.push({it:it,q:s.q,v:s.v,ok:false});return;}
+      var f=fich[id]; nOk++; cov+=s.v; var cu=Number(f.custo)||0;
+      itens.push({it:it,q:s.q,v:s.v,ok:true,cu:cu,c:cu*s.q});
+      var g=f.grupo==='bar'?bar:coz;
+      (f.ings||[]).forEach(function(i){
+        var k=insNorm(i[0]); var e=g[k]||(g[k]={n:i[0],u:i[1],q:0,c:0,emb:i[4],cnt:0});
+        e.q+=(Number(i[2])||0)*s.q; e.c+=(Number(i[3])||0)*s.q; e.cnt++; if(!e.emb&&i[4]) e.emb=i[4];
+      });
+    });
+    function soma(g){return Object.keys(g).reduce(function(a,k){return a+g[k].c;},0);}
+    var cCoz=soma(coz),cBar=soma(bar),cTot=cCoz+cBar;
+    var cmv=cov?cTot/cov*100:0;
+    function card(l,v,s,col){return '<div style="background:#f5f0e8;border:1px solid #e8e1d4;padding:9px 10px;border-radius:6px"><div style="font-size:10px;color:#666">'+l+'</div><div style="font-size:16px;font-weight:700;color:'+(col||'#2c3e35')+'">'+v+'</div><div style="font-size:10px;color:#666">'+s+'</div></div>';}
+    var h='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:6px">'
+      +card('Venda do dia',insBrl(fat),'sem serviço e couvert')
+      +card('Itens com ficha',nOk+' de '+nItens,insNum(fat?cov/fat*100:0,1)+'% da venda')
+      +card('Custo dos insumos',insBrl(cTot),'cozinha '+insBrl(cCoz)+' · bar '+insBrl(cBar))
+      +card('CMV teórico',insNum(cmv,1)+'%','sobre os itens com ficha','#1d9e75')+'</div>'
+      +'<div style="font-size:11px;color:#777;font-style:italic">Consumo teórico: quantidade vendida x ficha técnica. Não considera perdas, quebras ou brindes.</div>';
+    function un(e){return e.u==='ml'||e.u==='g'?insNum(e.q,0)+' '+e.u:insNum(e.q,3)+' '+e.u;}
+    function pb(e){if(e.emb&&(e.u==='ml'||e.u==='g')&&e.q) return insBrl(e.c/(e.q/e.emb))+'/emb.'; return e.q?insBrl(e.c/e.q)+'/'+e.u:'-';}
+    var lc=Object.keys(coz).map(function(k){return coz[k];}).sort(function(a,b){return b.c-a.c;});
+    var lb=Object.keys(bar).map(function(k){return bar[k];}).sort(function(a,b){return b.c-a.c;});
+    var rc=lc.slice(0,15),rb=lb.slice(0,10);
+    h+=insSec('02','Insumos da cozinha · maiores custos')+insTab(['INSUMO','QUANTIDADE','PREÇO BASE','CUSTO'],rc.map(function(e){return [insEsc(e.n),un(e),pb(e),insBrl(e.c)];}),['Demais '+(lc.length-rc.length)+' insumos','','',insBrl(lc.slice(15).reduce(function(a,e){return a+e.c;},0))],['L','R','R','R']);
+    h+=insSec('03','Insumos do bar · maiores custos')+insTab(['INSUMO','QUANTIDADE','PREÇO BASE','CUSTO'],rb.map(function(e){return [insEsc(e.n),un(e),pb(e),insBrl(e.c)];}),['Demais '+(lb.length-rb.length)+' insumos','','',insBrl(lb.slice(10).reduce(function(a,e){return a+e.c;},0))],['L','R','R','R']);
+    var ok=itens.filter(function(i){return i.ok;}).sort(function(a,b){return b.v-a.v;});
+    h+=insSec('04','Pratos e drinks · CMV por item')+insTab(['ITEM','QTD','VENDA','CUSTO UNIT.','CUSTO TOTAL','CMV'],ok.map(function(i){return [insEsc(i.it),insNum(i.q,0),insBrl(i.v),insBrl(i.cu),insBrl(i.c),insNum(i.v?i.c/i.v*100:0,1)+'%'];}),['Total com ficha',insNum(ok.reduce(function(a,i){return a+i.q;},0),0),insBrl(cov),'',insBrl(cTot),insNum(cmv,1)+'%'],['L','R','R','R','R','R']);
+    var sem=itens.filter(function(i){return !i.ok;}).sort(function(a,b){return b.v-a.v;});
+    h+=insSec('05','Vendidos sem ficha técnica');
+    h+=sem.length?('<div style="background:#faeeee;border-left:3px solid #a32d2d;padding:8px 10px;font-size:12px;margin-bottom:6px;color:#a32d2d"><b>'+sem.length+' itens, '+insBrl(sem.reduce(function(a,i){return a+i.v;},0))+'</b> não entram no consumo de insumos.</div>'+insTab(['ITEM','QTD','VENDA'],sem.map(function(i){return [insEsc(i.it),insNum(i.q,0),insBrl(i.v)];}),null,['L','R','R'])):'<div style="font-size:12px;color:#1d9e75">Todos os itens vendidos têm ficha técnica.</div>';
+    out.style.color='#1a1a1a'; out.innerHTML=h;
+  }catch(e){out.textContent='Erro ao carregar: '+(e&&e.message?e.message:e);}
 }
 function renderHomeTabRelatorios(body){
   if(!rgPer.ref) rgPer.ref = rgSegundaPassada();
