@@ -812,8 +812,8 @@ function loginGerente(){
 let homeTabAtual='visao';
 function homeTabsDisponiveis(perfil){
 return perfil==='master'
-? [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['relatorios','Relatórios'],['insumos','Insumos'],['custos','Custos'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']]
-: [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']];
+? [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['relatorios','Relatórios'],['insumos','Insumos'],['escala','Escala'],['custos','Custos'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']]
+: [['visao','Visão geral'],['vendas','Vendas'],['vendedores','Vendedores'],['escala','Escala'],['equipe','Equipe'],['checklist','Checklist'],['aovivo','Ao vivo']];
 }
 function renderHomeTabsBar(perfil){
   const tabsEl=document.getElementById('home-tabs');
@@ -833,7 +833,7 @@ function selecionarHomeTab(tab){
 function renderHomeTabConteudo(perfil){
   const body=document.getElementById('home-body');
   if(!body) return;
-  if(homeTabAtual==='insumos') return renderHomeTabInsumos(perfil, body);
+  if(homeTabAtual==='insumos') return renderHomeTabInsumos(perfil, body); if(homeTabAtual==='escala') return renderHomeTabEscala(perfil, body);
   if(homeTabAtual==='vendas') return renderHomeTabVendas(perfil, body);
   if(homeTabAtual==='vendedores') return renderHomeTabVendedores(perfil, body);
   if(homeTabAtual==='relatorios' && perfil==='master') return renderHomeTabRelatorios(body);
@@ -932,6 +932,255 @@ async function insCarregar(){
     out.style.color='#1a1a1a'; out.innerHTML=h;
   }catch(e){out.textContent='Erro ao carregar: '+(e&&e.message?e.message:e);}
 }
+/* ===== ESCALA DE FOLGAS (5x2 + 1 domingo/mês) ===== */
+function escPad(n){return String(n).padStart(2,'0');}
+function escFmt(d){return d.getFullYear()+'-'+escPad(d.getMonth()+1)+'-'+escPad(d.getDate());}
+function escParse(s){var p=s.split('-');return new Date(Number(p[0]),Number(p[1])-1,Number(p[2]),12,0,0);}
+function escAdd(s,n){var d=escParse(s);d.setDate(d.getDate()+n);return escFmt(d);}
+function escDow(s){return escParse(s).getDay();}
+function escDiasMes(ym){var p=ym.split('-');var y=Number(p[0]),m=Number(p[1]);var n=new Date(y,m,0).getDate();var out=[];for(var i=1;i<=n;i++)out.push(ym+'-'+escPad(i));return out;}
+/* semanas Seg-Dom que tocam o mês; cada semana: {dias:[7 datas], noMes:[datas do mês]} */
+function escSemanas(ym){
+  var dias=escDiasMes(ym); var ini=dias[0], fim=dias[dias.length-1];
+  var d0=escDow(ini); var back=(d0+6)%7; var seg=escAdd(ini,-back); var sem=[];
+  while(seg<=fim){var w=[];for(var i=0;i<7;i++)w.push(escAdd(seg,i)); sem.push({dias:w,noMes:w.filter(function(x){return x.slice(0,7)===ym;})}); seg=escAdd(seg,7);}
+  return sem;
+}
+function escReq(nDias){return nDias>=5?2:(nDias>=3?1:0);}
+var ESC_PESO={1:1,2:1,3:1,4:1.3,5:2,6:2.5,0:2};
+function escRand(seed){var s=seed>>>0;return function(){s=(s+0x6D2B79F5)>>>0;var t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+/* gera uma tentativa para um grupo (setor). membros: [{id}] */
+function escTentativa(ids,ym,rnd){
+  var dias=escDiasMes(ym), sem=escSemanas(ym);
+  var doms=dias.filter(function(d){return escDow(d)===0;});
+  var cnt={}; dias.forEach(function(d){cnt[d]=0;});
+  var offs={}; ids.forEach(function(id){offs[id]=[];});
+  var viol=0, domDe={};
+  /* domingo do mês: rodízio embaralhado */
+  var ord=ids.slice(); for(var i=ord.length-1;i>0;i--){var j=Math.floor(rnd()*(i+1));var t=ord[i];ord[i]=ord[j];ord[j]=t;}
+  if(doms.length){ord.forEach(function(id,k){domDe[id]=doms[k%doms.length]; cnt[domDe[id]]++; offs[id].push(domDe[id]);});}
+  ord.forEach(function(id){
+    var prev=null;
+    sem.forEach(function(w){
+      var req=escReq(w.noMes.length);
+      var tem=offs[id].filter(function(d){return w.dias.indexOf(d)>=0;});
+      var need=Math.max(0,req-tem.length);
+      var cand=w.noMes.filter(function(d){return escDow(d)!==0;});
+      var pick=[];
+      if(need>0 && cand.length){
+        var best=null,bs=1e9;
+        var lim=prev?escAdd(prev,7):null;
+        var combos=[];
+        if(need===1){cand.forEach(function(a){combos.push([a]);});}
+        else{for(var a=0;a<cand.length;a++)for(var b=a+1;b<cand.length;b++)combos.push([cand[a],cand[b]]);}
+        combos.forEach(function(c){
+          var first=c.concat(tem).sort()[0];
+          var ok=!lim||first<=lim;
+          var sc=0; c.forEach(function(d){sc+=cnt[d]*ESC_PESO[escDow(d)]+ESC_PESO[escDow(d)]*0.5;});
+          if(c.length===2 && escAdd(c[0],1)===c[1]) sc-=0.4;
+          sc+=rnd()*0.6; if(!ok) sc+=500;
+          if(sc<bs){bs=sc;best=c;}
+        });
+        pick=best||[];
+        if(best){var f2=best.concat(tem).sort()[0]; if(lim&&f2>lim) viol++;}
+      }
+      pick.forEach(function(d){offs[id].push(d);cnt[d]++;});
+      var todas=offs[id].filter(function(d){return w.dias.indexOf(d)>=0;}).sort();
+      if(todas.length) prev=todas[todas.length-1];
+    });
+  });
+  var cost=viol*1000; dias.forEach(function(d){var x=cnt[d]*ESC_PESO[escDow(d)]; cost+=x*x;});
+  return {offs:offs,domDe:domDe,cost:cost,cnt:cnt};
+}
+function escGerar(colabs,ym,seed){
+  var porSetor={}; colabs.forEach(function(c){(porSetor[c.setor||'Geral']=porSetor[c.setor||'Geral']||[]).push(c);});
+  var res={ym:ym,folgas:{},domingo:{}};
+  Object.keys(porSetor).forEach(function(s,si){
+    var ids=porSetor[s].map(function(c){return c.id;});
+    var rnd=escRand((seed||1)*7919+si*104729), best=null;
+    for(var k=0;k<300;k++){var t=escTentativa(ids,ym,rnd); if(!best||t.cost<best.cost) best=t;}
+    ids.forEach(function(id){res.folgas[id]=best.offs[id].slice().sort(); if(best.domDe[id]) res.domingo[id]=best.domDe[id];});
+  });
+  return res;
+}
+/* confere as regras */
+function escValidar(colabs,res){
+  var ym=res.ym, dias=escDiasMes(ym), sem=escSemanas(ym), issues=[];
+  var doms=dias.filter(function(d){return escDow(d)===0;});
+  colabs.forEach(function(c){
+    var f=(res.folgas[c.id]||[]).slice().sort();
+    var nd=f.filter(function(d){return escDow(d)===0;}).length;
+    if(doms.length && nd!==1) issues.push(c.nome+': '+nd+' domingos de folga (esperado 1)');
+    sem.forEach(function(w,i){
+      var req=escReq(w.noMes.length); var n=f.filter(function(d){return w.dias.indexOf(d)>=0;}).length;
+      var temDom=f.some(function(d){return escDow(d)===0&&w.dias.indexOf(d)>=0;});
+      var exp=Math.max(req,temDom?1:0);
+      if(n!==exp) issues.push(c.nome+': semana '+(i+1)+' com '+n+' folga(s) (esperado '+exp+')');
+    });
+    var run=0,maxRun=0; dias.forEach(function(d){ if(f.indexOf(d)>=0) run=0; else {run++; if(run>maxRun)maxRun=run;} });
+    if(maxRun>6) issues.push(c.nome+': '+maxRun+' dias seguidos sem folga');
+  });
+  return issues;
+}
+/* ===== ESCALA UI ===== */
+var escSt={ym:null,colabs:[],res:null,carregado:null};
+var ESC_SETORES=['Salão','Cozinha','Bar','Caixa','Outro'];
+var ESC_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+var ESC_DS=['D','S','T','Q','Q','S','S'];
+function escMesPadrao(){var h=fdDiaPadrao();var d=escParse(h);d.setMonth(d.getMonth()+1,1);return escFmt(d).slice(0,7);}
+function escNome(ym){return ESC_MESES[Number(ym.slice(5,7))-1]+' de '+ym.slice(0,4);}
+function renderHomeTabEscala(perfil, body){
+  if(!escSt.ym) escSt.ym=escMesPadrao();
+  body.innerHTML='<div class="card"><div style="font-weight:700;font-size:14px;margin-bottom:4px">Escala de folgas mensal</div>'
+   +'<div style="font-size:12px;color:#666;margin-bottom:10px">Regras: 2 folgas por semana e 1 domingo de folga por colaborador no mês. O domingo folgado conta como uma das 2 folgas da semana.</div>'
+   +'<div class="field"><label class="fl">Mês</label><input type="month" id="esc-mes" value="'+escSt.ym+'" onchange="escMudarMes(this.value)"></div>'
+   +'<div style="font-weight:700;font-size:13px;margin:10px 0 6px">Colaboradores</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><input type="text" id="esc-nome" placeholder="Nome" style="flex:1;min-width:130px;padding:8px;border:1px solid #ccc;border-radius:8px"><select id="esc-setor" style="padding:8px;border:1px solid #ccc;border-radius:8px">'+ESC_SETORES.map(function(s){return '<option>'+s+'</option>';}).join('')+'</select><button class="btn" onclick="escAddColab()">Adicionar</button></div>'
+   +'<div style="margin-bottom:8px"><button class="btn" onclick="escImportar()" style="background:#eee;color:#333">Importar vendedores (últimos 30 dias)</button></div>'
+   +'<div id="esc-lista" style="font-size:13px"></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="escAcaoGerar()">Gerar escala de folgas</button><button class="btn" onclick="escSalvar()" style="background:#eee;color:#333">Salvar</button><button class="btn" onclick="escPdf()" style="background:#eee;color:#333">Baixar PDF</button></div>'
+   +'<div id="esc-msg" style="font-size:12px;margin-top:8px;color:#666"></div>'
+   +'<div id="esc-grade" style="margin-top:12px;overflow-x:auto"></div></div>';
+  escCarregar();
+}
+async function escCarregar(){
+  var slug=slugAtual(); var key=slug+'|'+escSt.ym;
+  try{
+    var c=await db.ref('gestao_escalas/'+slug+'/colaboradores').once('value'); var cv=c.val()||{};
+    escSt.colabs=Object.keys(cv).map(function(id){return {id:id,nome:cv[id].nome,setor:cv[id].setor||'Outro'};}).sort(function(a,b){return (a.setor+a.nome).localeCompare(b.setor+b.nome);});
+    var m=await db.ref('gestao_escalas/'+slug+'/meses/'+escSt.ym).once('value'); var mv=m.val();
+    escSt.res=mv?{ym:escSt.ym,folgas:mv.folgas||{},domingo:mv.domingo||{}}:null;
+    Object.keys((escSt.res||{}).folgas||{}).forEach(function(k){if(!Array.isArray(escSt.res.folgas[k]))escSt.res.folgas[k]=Object.values(escSt.res.folgas[k]);});
+  }catch(e){escMsg('Erro ao carregar: '+e.message,true);}
+  escRenderLista(); escRenderGrade();
+}
+function escMsg(t,err){var m=document.getElementById('esc-msg'); if(m){m.textContent=t;m.style.color=err?'#c0392b':'#666';}}
+function escMudarMes(v){if(!v)return; escSt.ym=v; escCarregar();}
+function escRenderLista(){
+  var el=document.getElementById('esc-lista'); if(!el)return;
+  if(!escSt.colabs.length){el.innerHTML='<div style="color:#888">Nenhum colaborador cadastrado.</div>';return;}
+  el.innerHTML=ESC_SETORES.map(function(s){
+    var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return '';
+    return '<div style="margin:6px 0"><b>'+s+'</b> ('+l.length+'): '+l.map(function(c){return '<span style="display:inline-block;background:#f3f3f3;border-radius:12px;padding:3px 8px;margin:2px">'+insEsc(c.nome)+' <a href="#" onclick="escRemColab(\''+c.id+'\');return false" style="color:#c0392b;text-decoration:none">✕</a></span>';}).join('')+'</div>';
+  }).join('');
+}
+async function escAddColab(){
+  var n=(document.getElementById('esc-nome').value||'').trim(); var s=document.getElementById('esc-setor').value;
+  if(!n){escMsg('Informe o nome.',true);return;}
+  var id=db.ref('gestao_escalas/'+slugAtual()+'/colaboradores').push().key;
+  await db.ref('gestao_escalas/'+slugAtual()+'/colaboradores/'+id).set({nome:n,setor:s});
+  document.getElementById('esc-nome').value=''; escCarregar();
+}
+async function escRemColab(id){
+  if(!confirm('Remover colaborador?'))return;
+  await db.ref('gestao_escalas/'+slugAtual()+'/colaboradores/'+id).remove(); escCarregar();
+}
+async function escImportar(){
+  escMsg('Buscando vendedores...');
+  try{
+    var slug=slugAtual(), hoje=fdDiaPadrao(), nomes={};
+    for(var i=0;i<30;i++){
+      var d=fdSomaDias(hoje,-i); var sn=await VENDAS_REF.child(slug).child(d).once('value'); var v=sn.val()||{};
+      Object.values(v).forEach(function(r){var n=(r.vendedor||'').trim(); if(n&&!/^(sistema|caixa|total)$/i.test(n)) nomes[n]=1;});
+    }
+    var ex={}; escSt.colabs.forEach(function(c){ex[c.nome.toLowerCase()]=1;});
+    var novos=Object.keys(nomes).filter(function(n){return !ex[n.toLowerCase()];});
+    for(var j=0;j<novos.length;j++){var id=db.ref('gestao_escalas/'+slug+'/colaboradores').push().key; await db.ref('gestao_escalas/'+slug+'/colaboradores/'+id).set({nome:novos[j],setor:'Salão'});}
+    escMsg(novos.length+' vendedor(es) importado(s) como Salão. Ajuste o setor removendo/adicionando se preciso.');
+    escCarregar();
+  }catch(e){escMsg('Erro: '+e.message,true);}
+}
+function escAcaoGerar(){
+  if(!escSt.colabs.length){escMsg('Cadastre colaboradores primeiro.',true);return;}
+  if(escSt.res && !confirm('Já existe escala para este mês. Gerar nova e substituir?'))return;
+  escSt.res=escGerar(escSt.colabs,escSt.ym,Math.floor(Math.random()*1e6)+1);
+  var iss=escValidar(escSt.colabs,escSt.res);
+  escRenderGrade();
+  escMsg(iss.length?('Atenção: '+iss.length+' ponto(s) fora da regra. Veja abaixo.'):'Escala gerada e validada. Clique em Salvar para gravar.',iss.length>0);
+}
+async function escSalvar(){
+  if(!escSt.res){escMsg('Gere a escala primeiro.',true);return;}
+  try{await db.ref('gestao_escalas/'+slugAtual()+'/meses/'+escSt.ym).set({folgas:escSt.res.folgas,domingo:escSt.res.domingo,geradoEm:new Date().toISOString()}); escMsg('Escala salva.');}
+  catch(e){escMsg('Erro ao salvar: '+e.message,true);}
+}
+function escToggle(id,d){
+  if(!escSt.res)return; var f=escSt.res.folgas[id]=escSt.res.folgas[id]||[]; var i=f.indexOf(d);
+  if(i>=0)f.splice(i,1); else f.push(d); f.sort();
+  var dom=f.filter(function(x){return escDow(x)===0;}); if(dom.length)escSt.res.domingo[id]=dom[0]; else delete escSt.res.domingo[id];
+  escRenderGrade();
+  var iss=escValidar(escSt.colabs,escSt.res); escMsg(iss.length?('Fora da regra: '+iss.length+' ponto(s). Lembre de Salvar.'):'Dentro das regras. Lembre de Salvar.',iss.length>0);
+}
+function escRenderGrade(){
+  var el=document.getElementById('esc-grade'); if(!el)return;
+  if(!escSt.res){el.innerHTML='<div style="color:#888;font-size:13px">Sem escala para '+escNome(escSt.ym)+'.</div>';return;}
+  var dias=escDiasMes(escSt.ym), h='';
+  ESC_SETORES.forEach(function(s){
+    var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return;
+    h+=insSec('',s);
+    h+='<table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 6px;position:sticky;left:0;background:#fff">Nome</th>'+dias.map(function(d){var w=escDow(d);return '<th style="padding:2px 3px;'+(w===0?'background:#fde8d0':'')+'">'+Number(d.slice(8))+'<br><span style="font-weight:400;color:#888">'+ESC_DS[w]+'</span></th>';}).join('')+'<th style="padding:2px 6px">Total</th></tr>';
+    l.forEach(function(c){
+      var f=escSt.res.folgas[c.id]||[];
+      h+='<tr><td style="padding:3px 6px;white-space:nowrap;position:sticky;left:0;background:#fff">'+insEsc(c.nome)+'</td>'+dias.map(function(d){
+        var on=f.indexOf(d)>=0, w=escDow(d);
+        return '<td onclick="escToggle(\''+c.id+'\',\''+d+'\')" style="text-align:center;cursor:pointer;border:1px solid #eee;min-width:20px;'+(on?(w===0?'background:#f39c12;color:#fff;font-weight:700':'background:#1d9e75;color:#fff;font-weight:700'):(w===0?'background:#fff6ea':''))+'">'+(on?(w===0?'D':'F'):'')+'</td>';
+      }).join('')+'<td style="text-align:center;font-weight:700">'+f.length+'</td></tr>';
+    });
+    h+='<tr><td style="padding:3px 6px;color:#888;position:sticky;left:0;background:#fff">Folgando</td>'+dias.map(function(d){var n=l.filter(function(c){return (escSt.res.folgas[c.id]||[]).indexOf(d)>=0;}).length;return '<td style="text-align:center;color:#888">'+n+'</td>';}).join('')+'<td></td></tr></table>';
+  });
+  var iss=escValidar(escSt.colabs,escSt.res);
+  if(iss.length) h+='<div style="margin-top:10px;font-size:12px;color:#c0392b"><b>Fora da regra:</b><br>'+iss.slice(0,15).map(insEsc).join('<br>')+'</div>';
+  h+='<div style="margin-top:8px;font-size:11px;color:#888">F = folga · D = domingo de folga · toque numa célula para ajustar manualmente.</div>';
+  el.innerHTML=h;
+}
+async function escPdf(){
+  if(!escSt.res){escMsg('Gere a escala primeiro.',true);return;}
+  try{
+    var slug=slugAtual(), tx=slug==='texas';
+    var C=tx?{dark:[122,31,31],acc:[163,45,45],soft:[250,238,238]}:{dark:[44,62,53],acc:[29,158,117],soft:[225,245,238]};
+    var logo=await fdCarregarImagem(tx?'icon-texas.png':'icon-cali.png');
+    var doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+    var W=doc.internal.pageSize.getWidth(), M=24, dias=escDiasMes(escSt.ym), nome=tx?'Texas Country Bar':'Cali Cravings';
+    function topo(){
+      doc.setFillColor(C.dark[0],C.dark[1],C.dark[2]); doc.rect(0,0,W,64,'F');
+      var x=M; if(logo){doc.addImage(logo.data,'PNG',M,12,40,40); x=M+52;}
+      doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text(nome.toUpperCase(),x,34);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.text('ESCALA DE FOLGAS · '+escNome(escSt.ym).toUpperCase(),x,50);
+    }
+    topo(); var y=80, primeiro=true;
+    ESC_SETORES.forEach(function(s){
+      var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return;
+      if(!primeiro){doc.addPage(); topo(); y=80;} primeiro=false;
+      doc.setFillColor(C.acc[0],C.acc[1],C.acc[2]); doc.rect(M,y,4,14,'F');
+      doc.setTextColor(26,26,26); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(s.toUpperCase()+' · '+l.length+' colaborador(es)',M+10,y+11);
+      var head=[['Nome'].concat(dias.map(function(d){return Number(d.slice(8))+'\n'+ESC_DS[escDow(d)];})).concat(['Tot','Dom'])];
+      var rows=l.map(function(c){var f=escSt.res.folgas[c.id]||[]; var dm=escSt.res.domingo[c.id];
+        return [c.nome].concat(dias.map(function(d){return f.indexOf(d)>=0?(escDow(d)===0?'D':'F'):'';})).concat([String(f.length),dm?dm.slice(8)+'/'+dm.slice(5,7):'-']);});
+      var cov=['Folgando'].concat(dias.map(function(d){return String(l.filter(function(c){return (escSt.res.folgas[c.id]||[]).indexOf(d)>=0;}).length);})).concat(['','']);
+      rows.push(cov);
+      var nd=dias.length, cw=Math.max(11,Math.min(17,(W-2*M-110-60)/nd));
+      var cs={0:{cellWidth:110,halign:'left',fontStyle:'bold'}}; for(var i=1;i<=nd;i++)cs[i]={cellWidth:cw};
+      doc.autoTable({head:head,body:rows,startY:y+20,margin:{left:M,right:M},theme:'grid',
+        styles:{fontSize:7,cellPadding:2,halign:'center',valign:'middle',lineColor:[220,220,220],lineWidth:0.4,textColor:[26,26,26]},
+        headStyles:{fillColor:C.dark,textColor:255,fontSize:6.5},columnStyles:cs,
+        didParseCell:function(d){
+          var isCov=d.row.index===rows.length-1;
+          if(d.section==='head'&&d.column.index>=1&&d.column.index<=nd){var w=escDow(dias[d.column.index-1]); if(w===0) d.cell.styles.fillColor=C.acc;}
+          if(d.section==='body'){
+            if(isCov){d.cell.styles.fillColor=C.soft;d.cell.styles.textColor=[102,102,96];return;}
+            if(d.column.index>=1&&d.column.index<=nd){var v=d.cell.raw, w2=escDow(dias[d.column.index-1]);
+              if(v==='F'){d.cell.styles.fillColor=C.acc;d.cell.styles.textColor=255;d.cell.styles.fontStyle='bold';}
+              else if(v==='D'){d.cell.styles.fillColor=[243,156,18];d.cell.styles.textColor=255;d.cell.styles.fontStyle='bold';}
+              else if(w2===0){d.cell.styles.fillColor=[245,240,232];}
+            }
+          }
+        }});
+      var yy=doc.lastAutoTable.finalY+12; doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(102,102,96);
+      doc.text('F = folga · D = domingo de folga (vale como 1 das 2 folgas da semana) · Regra: 2 folgas por semana e 1 domingo por mês.',M,yy);
+    });
+    doc.save('escala-folgas-'+slug+'-'+escSt.ym+'.pdf'); escMsg('PDF gerado.');
+  }catch(e){escMsg('Erro no PDF: '+e.message,true);}
+}
+
 function renderHomeTabRelatorios(body){
   if(!rgPer.ref) rgPer.ref = rgSegundaPassada();
   const t = rgPer.tipo;
