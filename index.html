@@ -1024,7 +1024,9 @@ function escValidar(colabs,res){
 }
 /* ===== ESCALA UI ===== */
 var escSt={ym:null,colabs:[],res:null,carregado:null};
-var ESC_SETORES=['Salão','Cozinha','Bar','Caixa','Outro'];
+var ESC_SETORES=['Garçom','Cumim','Hostess','Caixa','Limpeza','Cozinha','Bar','Outro'];
+var ESC_TURNOS=['Dia','Noite'];
+function escGrupos(){var g=[];ESC_SETORES.forEach(function(s){ESC_TURNOS.forEach(function(t){var l=escSt.colabs.filter(function(c){return c.setor===s&&c.turno===t;});if(l.length)g.push({setor:s,turno:t,lista:l});});});return g;}
 var ESC_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 var ESC_DS=['D','S','T','Q','Q','S','S'];
 function escMesPadrao(){var h=fdDiaPadrao();var d=escParse(h);d.setMonth(d.getMonth()+1,1);return escFmt(d).slice(0,7);}
@@ -1035,7 +1037,7 @@ function renderHomeTabEscala(perfil, body){
    +'<div style="font-size:12px;color:#666;margin-bottom:10px">Regras: 2 folgas por semana e 1 domingo de folga por colaborador no mês. O domingo folgado conta como uma das 2 folgas da semana.</div>'
    +'<div class="field"><label class="fl">Mês</label><input type="month" id="esc-mes" value="'+escSt.ym+'" onchange="escMudarMes(this.value)"></div>'
    +'<div style="font-weight:700;font-size:13px;margin:10px 0 6px">Colaboradores</div>'
-   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><input type="text" id="esc-nome" placeholder="Nome" style="flex:1;min-width:130px;padding:8px;border:1px solid #ccc;border-radius:8px"><select id="esc-setor" style="padding:8px;border:1px solid #ccc;border-radius:8px">'+ESC_SETORES.map(function(s){return '<option>'+s+'</option>';}).join('')+'</select><button class="btn" onclick="escAddColab()">Adicionar</button></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><input type="text" id="esc-nome" placeholder="Nome" style="flex:1;min-width:130px;padding:8px;border:1px solid #ccc;border-radius:8px"><select id="esc-setor" style="padding:8px;border:1px solid #ccc;border-radius:8px">'+ESC_SETORES.map(function(s){return '<option>'+s+'</option>';}).join('')+'</select><select id="esc-turno" style="padding:8px;border:1px solid #ccc;border-radius:8px"><option>Dia</option><option>Noite</option></select><button class="btn" onclick="escAddColab()">Adicionar</button></div>'
    +'<div style="margin-bottom:8px"><button class="btn" onclick="escImportar()" style="background:#eee;color:#333">Importar vendedores (últimos 30 dias)</button></div>'
    +'<div id="esc-lista" style="font-size:13px"></div>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="escAcaoGerar()">Gerar escala de folgas</button><button class="btn" onclick="escSalvar()" style="background:#eee;color:#333">Salvar</button><button class="btn" onclick="escPdf()" style="background:#eee;color:#333">Baixar PDF</button></div>'
@@ -1047,7 +1049,7 @@ async function escCarregar(){
   var slug=slugAtual(); var key=slug+'|'+escSt.ym;
   try{
     var c=await db.ref('gestao_escalas/'+slug+'/colaboradores').once('value'); var cv=c.val()||{};
-    escSt.colabs=Object.keys(cv).map(function(id){return {id:id,nome:cv[id].nome,setor:cv[id].setor||'Outro'};}).sort(function(a,b){return (a.setor+a.nome).localeCompare(b.setor+b.nome);});
+    escSt.colabs=Object.keys(cv).map(function(id){var st=cv[id].setor||'Outro'; if(st==='Salão')st='Garçom'; return {id:id,nome:cv[id].nome,setor:st,turno:cv[id].turno||'Dia'};}).sort(function(a,b){return a.nome.localeCompare(b.nome);});
     var m=await db.ref('gestao_escalas/'+slug+'/meses/'+escSt.ym).once('value'); var mv=m.val();
     escSt.res=mv?{ym:escSt.ym,folgas:mv.folgas||{},domingo:mv.domingo||{}}:null;
     Object.keys((escSt.res||{}).folgas||{}).forEach(function(k){if(!Array.isArray(escSt.res.folgas[k]))escSt.res.folgas[k]=Object.values(escSt.res.folgas[k]);});
@@ -1059,16 +1061,19 @@ function escMudarMes(v){if(!v)return; escSt.ym=v; escCarregar();}
 function escRenderLista(){
   var el=document.getElementById('esc-lista'); if(!el)return;
   if(!escSt.colabs.length){el.innerHTML='<div style="color:#888">Nenhum colaborador cadastrado.</div>';return;}
-  el.innerHTML=ESC_SETORES.map(function(s){
-    var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return '';
-    return '<div style="margin:6px 0"><b>'+s+'</b> ('+l.length+'): '+l.map(function(c){return '<span style="display:inline-block;background:#f3f3f3;border-radius:12px;padding:3px 8px;margin:2px">'+insEsc(c.nome)+' <a href="#" onclick="escRemColab(\''+c.id+'\');return false" style="color:#c0392b;text-decoration:none">✕</a></span>';}).join('')+'</div>';
+  el.innerHTML=escGrupos().map(function(g){
+    return '<div style="margin:6px 0"><b>'+g.setor+' · '+g.turno+'</b> ('+g.lista.length+'): '+g.lista.map(function(c){return '<span style="display:inline-block;background:#f3f3f3;border-radius:12px;padding:3px 8px;margin:2px">'+insEsc(c.nome)+' <a href="#" onclick="escTrocaTurno(\''+c.id+'\');return false" title="Trocar turno" style="text-decoration:none">⇄</a> <a href="#" onclick="escRemColab(\''+c.id+'\');return false" style="color:#c0392b;text-decoration:none">✕</a></span>';}).join('')+'</div>';
   }).join('');
 }
+async function escTrocaTurno(id){
+  var c=escSt.colabs.filter(function(x){return x.id===id;})[0]; if(!c)return;
+  await db.ref('gestao_escalas/'+slugAtual()+'/colaboradores/'+id).update({turno:c.turno==='Dia'?'Noite':'Dia'}); escCarregar();
+}
 async function escAddColab(){
-  var n=(document.getElementById('esc-nome').value||'').trim(); var s=document.getElementById('esc-setor').value;
+  var n=(document.getElementById('esc-nome').value||'').trim(); var s=document.getElementById('esc-setor').value; var tn=document.getElementById('esc-turno').value;
   if(!n){escMsg('Informe o nome.',true);return;}
   var id=db.ref('gestao_escalas/'+slugAtual()+'/colaboradores').push().key;
-  await db.ref('gestao_escalas/'+slugAtual()+'/colaboradores/'+id).set({nome:n,setor:s});
+  await db.ref('gestao_escalas/'+slugAtual()+'/colaboradores/'+id).set({nome:n,setor:s,turno:tn});
   document.getElementById('esc-nome').value=''; escCarregar();
 }
 async function escRemColab(id){
@@ -1085,15 +1090,15 @@ async function escImportar(){
     }
     var ex={}; escSt.colabs.forEach(function(c){ex[c.nome.toLowerCase()]=1;});
     var novos=Object.keys(nomes).filter(function(n){return !ex[n.toLowerCase()];});
-    for(var j=0;j<novos.length;j++){var id=db.ref('gestao_escalas/'+slug+'/colaboradores').push().key; await db.ref('gestao_escalas/'+slug+'/colaboradores/'+id).set({nome:novos[j],setor:'Salão'});}
-    escMsg(novos.length+' vendedor(es) importado(s) como Salão. Ajuste o setor removendo/adicionando se preciso.');
+    for(var j=0;j<novos.length;j++){var id=db.ref('gestao_escalas/'+slug+'/colaboradores').push().key; await db.ref('gestao_escalas/'+slug+'/colaboradores/'+id).set({nome:novos[j],setor:'Garçom',turno:'Dia'});}
+    escMsg(novos.length+' vendedor(es) importado(s) como Garçom/Dia. Ajuste o turno com ⇄ e a função removendo e adicionando de novo.');
     escCarregar();
   }catch(e){escMsg('Erro: '+e.message,true);}
 }
 function escAcaoGerar(){
   if(!escSt.colabs.length){escMsg('Cadastre colaboradores primeiro.',true);return;}
   if(escSt.res && !confirm('Já existe escala para este mês. Gerar nova e substituir?'))return;
-  escSt.res=escGerar(escSt.colabs,escSt.ym,Math.floor(Math.random()*1e6)+1);
+  escSt.res=escGerar(escSt.colabs.map(function(c){return {id:c.id,nome:c.nome,setor:c.setor+'|'+c.turno};}),escSt.ym,Math.floor(Math.random()*1e6)+1);
   var iss=escValidar(escSt.colabs,escSt.res);
   escRenderGrade();
   escMsg(iss.length?('Atenção: '+iss.length+' ponto(s) fora da regra. Veja abaixo.'):'Escala gerada e validada. Clique em Salvar para gravar.',iss.length>0);
@@ -1114,9 +1119,9 @@ function escRenderGrade(){
   var el=document.getElementById('esc-grade'); if(!el)return;
   if(!escSt.res){el.innerHTML='<div style="color:#888;font-size:13px">Sem escala para '+escNome(escSt.ym)+'.</div>';return;}
   var dias=escDiasMes(escSt.ym), h='';
-  ESC_SETORES.forEach(function(s){
-    var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return;
-    h+=insSec('',s);
+  escGrupos().forEach(function(g){
+    var l=g.lista;
+    h+=insSec('',g.setor+' · '+g.turno);
     h+='<table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 6px;position:sticky;left:0;background:#fff">Nome</th>'+dias.map(function(d){var w=escDow(d);return '<th style="padding:2px 3px;'+(w===0?'background:#fde8d0':'')+'">'+Number(d.slice(8))+'<br><span style="font-weight:400;color:#888">'+ESC_DS[w]+'</span></th>';}).join('')+'<th style="padding:2px 6px">Total</th></tr>';
     l.forEach(function(c){
       var f=escSt.res.folgas[c.id]||[];
@@ -1147,8 +1152,8 @@ async function escPdf(){
       doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.text('ESCALA DE FOLGAS · '+escNome(escSt.ym).toUpperCase(),x,50);
     }
     topo(); var y=80, primeiro=true;
-    ESC_SETORES.forEach(function(s){
-      var l=escSt.colabs.filter(function(c){return c.setor===s;}); if(!l.length)return;
+    escGrupos().forEach(function(g){
+      var l=g.lista, s=g.setor+' · '+g.turno;
       if(!primeiro){doc.addPage(); topo(); y=80;} primeiro=false;
       doc.setFillColor(C.acc[0],C.acc[1],C.acc[2]); doc.rect(M,y,4,14,'F');
       doc.setTextColor(26,26,26); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(s.toUpperCase()+' · '+l.length+' colaborador(es)',M+10,y+11);
