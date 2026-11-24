@@ -1772,6 +1772,7 @@ function renderHomeTabAoVivo(body){
       '<button class="btn-or" style="width:auto;padding:10px 20px" onclick="goTo(\'s-painel-vivo\')">Abrir painel completo</button>'+
     '</div>';
 }
+function escGerenteAbrir(){ var body=document.getElementById('home-body'); if(!body) return; body.innerHTML='<button class="btn-or" style="margin-bottom:10px" onclick="renderHome()">‹ Voltar</button><div id="esc-wrap"></div>'; renderHomeTabEscala('gerente', document.getElementById('esc-wrap')); }
 function renderHome(){
   const perfil=sessionStorage.getItem('perfilAtivo');
   const unidade=getUnidadeAtual();
@@ -1796,7 +1797,7 @@ function renderHome(){
       '<div style="font-size:34px;margin-bottom:6px">🏆</div>' +
       '<div style="font-size:17px;font-weight:700;margin-bottom:6px">Vendedores e meta do mês</div>' +
       '<div style="font-size:13px;opacity:.7;margin-bottom:14px">Meta, acompanhamento, ranking e destaques por categoria</div>' +
-      '<button class="btn-or" style="width:100%">Ver vendedores</button></div>';
+      '<button class="btn-or" style="width:100%">Ver vendedores</button></div>' + '<div class="card" style="text-align:center;padding:22px 18px;cursor:pointer" onclick="escGerenteAbrir()"><div style="font-size:34px;margin-bottom:6px">📅</div><div style="font-size:17px;font-weight:700;margin-bottom:6px">Escala de folgas</div><div style="font-size:13px;opacity:.7;margin-bottom:14px">Gerar a escala mensal 5x2 e baixar o PDF</div><button class="btn-or" style="width:100%">Abrir escala</button></div>';
     return;
   }
   if(_tabsEl) _tabsEl.style.display = '';
