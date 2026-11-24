@@ -1038,6 +1038,7 @@ function renderHomeTabEscala(perfil, body){
    +'<div class="field"><label class="fl">Mês</label><input type="month" id="esc-mes" value="'+escSt.ym+'" onchange="escMudarMes(this.value)"></div>'
    +'<div style="font-weight:700;font-size:13px;margin:10px 0 6px">Colaboradores</div>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><input type="text" id="esc-nome" placeholder="Nome" style="flex:1;min-width:130px;padding:8px;border:1px solid #ccc;border-radius:8px"><select id="esc-setor" style="padding:8px;border:1px solid #ccc;border-radius:8px">'+ESC_SETORES.map(function(s){return '<option>'+s+'</option>';}).join('')+'</select><select id="esc-turno" style="padding:8px;border:1px solid #ccc;border-radius:8px"><option>Dia</option><option>Noite</option></select><button class="btn" onclick="escAddColab()">Adicionar</button></div>'
+   +'<div style="margin-bottom:8px"><button class="btn" onclick="escImportarChecklist()" style="background:#1d9e75;color:#fff">Importar colaboradores do Checklist</button></div>'
    +'<div style="margin-bottom:8px"><button class="btn" onclick="escImportar()" style="background:#eee;color:#333">Importar vendedores (últimos 30 dias)</button></div>'
    +'<div id="esc-lista" style="font-size:13px"></div>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="escAcaoGerar()">Gerar escala de folgas</button><button class="btn" onclick="escSalvar()" style="background:#eee;color:#333">Salvar</button><button class="btn" onclick="escPdf()" style="background:#eee;color:#333">Baixar PDF</button></div>'
@@ -1137,6 +1138,31 @@ function escRenderGrade(){
   h+='<div style="margin-top:8px;font-size:11px;color:#888">F = folga · D = domingo de folga · toque numa célula para ajustar manualmente.</div>';
   el.innerHTML=h;
 }
+async function escImportarChecklist(){
+  escMsg('Buscando colaboradores do Checklist...');
+  try{
+    var slug=slugAtual();
+    var sn=await db.ref('gestao_escalas_fonte/'+slug+'/colaboradores_checklist').once('value');
+    var lista=sn.val();
+    if(!lista){escMsg('Ainda não há colaboradores espelhados do Checklist para esta unidade. Abra o app Checklist, tela de Gestão > Folgas ou Colaboradores, uma vez, e tente de novo.',true);return;}
+    lista=Array.isArray(lista)?lista:Object.values(lista);
+    var norm=function(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();};
+    var ex={}; escSt.colabs.forEach(function(c){ex[norm(c.nome)]=1;});
+    var mapSetor={GARCOM:'Garçom',CAIXA:'Caixa',HOSTESS:'Hostess',CUMIM:'Cumim'};
+    var novos=0, ambos=0, semSetor=0;
+    for(var i=0;i<lista.length;i++){
+      var c=lista[i]; if(!c||!c.nome||ex[norm(c.nome)]) continue; ex[norm(c.nome)]=1;
+      var setor=mapSetor[String(c.setor||'').toUpperCase()]; if(!setor){setor='Outro';semSetor++;}
+      var t=String(c.turno||'').toLowerCase(); var turno=t==='noite'?'Noite':'Dia'; if(t!=='dia'&&t!=='noite') ambos++;
+      var id=db.ref('gestao_escalas/'+slug+'/colaboradores').push().key;
+      await db.ref('gestao_escalas/'+slug+'/colaboradores/'+id).set({nome:c.nome,setor:setor,turno:turno});
+      novos++;
+    }
+    escMsg(novos+' colaborador(es) importado(s) do Checklist.'+(ambos?' '+ambos+' eram "dia e noite" e entraram como Dia (troque com ⇄).':'')+(semSetor?' '+semSetor+' sem função definida entraram como Outro (cozinha, bar e limpeza: ajuste removendo e adicionando de novo).':'')+(novos===0?' Todos já estavam cadastrados.':''));
+    escCarregar();
+  }catch(e){escMsg('Erro: '+e.message,true);}
+}
+
 async function escPdf(){
   if(!escSt.res){escMsg('Gere a escala primeiro.',true);return;}
   try{
