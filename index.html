@@ -4448,5 +4448,186 @@ aplicarModoTela();
 atualizarLayoutTela((document.querySelector('.screen.active')||{}).id || '');
 
 </script>
+<script>
+var lv = {id:null, titulo:'', ini:'', fim:'', linhas:[], lista:[]};
+function lvEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function lvRef(){ return db.ref('gestao_escalas/'+slugAtual()+'/livres'); }
+function lvDias(){
+  if(!lv.ini || !lv.fim || lv.fim<lv.ini) return [];
+  var out=[], d=lv.ini, n=0;
+  while(d<=lv.fim && n<62){ out.push(d); d=escAdd(d,1); n++; }
+  return out;
+}
+function lvFmtBR(d){ return d ? d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : ''; }
+function lvMsg(t,err){ var m=document.getElementById('lv-msg'); if(m){ m.textContent=t; m.style.color=err?'#c0392b':'#666'; } }
+function lvNovo(){
+  var d=escParse(fdDiaPadrao()); d.setMonth(d.getMonth()+1,1);
+  lv.id=null; lv.titulo=''; lv.ini=escFmt(d); lv.fim=escFmt(new Date(d.getFullYear(),d.getMonth()+1,0,12)); lv.linhas=[];
+}
+function lvAbrir(){
+  var body=document.getElementById('home-body'); if(!body) return;
+  if(!lv.ini) lvNovo();
+  lvRenderTela(body); lvCarregarLista();
+}
+function lvVoltar(){ var body=document.getElementById('home-body'); if(body) renderHomeTabEscala(null, body); }
+function lvRenderTela(body){
+  body = body || document.getElementById('home-body'); if(!body) return;
+  body.innerHTML='<button class="btn-or" style="margin-bottom:10px" onclick="lvVoltar()">‹ Voltar às escalas</button>'
+  +'<div class="card"><div style="font-weight:700;font-size:14px;margin-bottom:4px">Escala em branco</div>'
+  +'<div style="font-size:12px;color:#666;margin-bottom:10px">Você escolhe o período, digita nome e função e marca as folgas. Sem regras automáticas.</div>'
+  +'<div class="field"><label class="fl">Escalas salvas</label><div style="display:flex;gap:6px"><select id="lv-lista" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:8px"><option value="">— nova escala —</option></select><button class="btn" onclick="lvAbrirSalva()">Abrir</button></div></div>'
+  +'<div class="field"><label class="fl">Título (opcional)</label><input type="text" id="lv-titulo" value="'+lvEsc(lv.titulo)+'" placeholder="Ex.: Escala Salão · Dezembro" oninput="lv.titulo=this.value"></div>'
+  +'<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label class="fl">Início</label><input type="date" id="lv-ini" value="'+lv.ini+'" onchange="lvPeriodo()"></div><div class="field" style="flex:1"><label class="fl">Fim</label><input type="date" id="lv-fim" value="'+lv.fim+'" onchange="lvPeriodo()"></div></div>'
+  +'<div style="font-weight:700;font-size:13px;margin:10px 0 6px">Adicionar pessoa</div>'
+  +'<div style="display:flex;gap:6px;flex-wrap:wrap"><input type="text" id="lv-nome" placeholder="Nome" style="flex:1;min-width:130px;padding:8px;border:1px solid #ccc;border-radius:8px" onkeydown="if(event.key===\'Enter\')lvAddLinha()"><input type="text" id="lv-func" list="lv-funcs" placeholder="Função" style="flex:1;min-width:110px;padding:8px;border:1px solid #ccc;border-radius:8px" onkeydown="if(event.key===\'Enter\')lvAddLinha()"><datalist id="lv-funcs">'+ESC_SETORES.map(function(s){return '<option value="'+lvEsc(s)+'">';}).join('')+'</datalist><button class="btn" onclick="lvAddLinha()">Adicionar</button></div>'
+  +'<div id="lv-grade" style="margin-top:12px;overflow-x:auto"></div>'
+  +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="lvSalvar()">Salvar</button><button class="btn" onclick="lvPdf()" style="background:#eee;color:#333">Baixar PDF</button><button class="btn" onclick="lvNovoClick()" style="background:#eee;color:#333">Nova em branco</button><button class="btn" onclick="lvExcluir()" style="background:#fff;color:#c0392b;border:1px solid #c0392b">Excluir</button></div>'
+  +'<div id="lv-msg" style="font-size:12px;margin-top:8px;color:#666"></div></div>';
+  lvRenderGrade();
+}
+function lvPeriodo(){
+  var a=document.getElementById('lv-ini').value, b=document.getElementById('lv-fim').value;
+  if(a) lv.ini=a; if(b) lv.fim=b;
+  if(lv.fim<lv.ini){ lvMsg('A data final precisa ser depois da inicial.',true); }
+  else if(escAdd(lv.ini,61)<lv.fim){ lvMsg('Período máximo de 62 dias.',true); }
+  else lvMsg('');
+  lvRenderGrade();
+}
+function lvAddLinha(){
+  var n=(document.getElementById('lv-nome').value||'').trim(), f=(document.getElementById('lv-func').value||'').trim();
+  if(!n){ lvMsg('Informe o nome.',true); return; }
+  lv.linhas.push({id:'l'+Date.now().toString(36)+Math.floor(Math.random()*1000),nome:n,funcao:f,folgas:[]});
+  document.getElementById('lv-nome').value=''; document.getElementById('lv-nome').focus(); lvMsg('');
+  lvRenderGrade();
+}
+function lvSetLinha(id,k,v){ var l=lv.linhas.filter(function(x){return x.id===id;})[0]; if(l) l[k]=v; }
+function lvRemLinha(id){ if(!confirm('Remover esta pessoa da escala?')) return; lv.linhas=lv.linhas.filter(function(x){return x.id!==id;}); lvRenderGrade(); }
+function lvToggle(id,d){
+  var l=lv.linhas.filter(function(x){return x.id===id;})[0]; if(!l) return;
+  var i=l.folgas.indexOf(d); if(i>=0) l.folgas.splice(i,1); else l.folgas.push(d);
+  l.folgas.sort(); lvRenderGrade();
+}
+function lvRenderGrade(){
+  var el=document.getElementById('lv-grade'); if(!el) return;
+  var dias=lvDias();
+  if(!dias.length){ el.innerHTML='<div style="color:#888;font-size:13px">Defina um período válido (início e fim).</div>'; return; }
+  if(!lv.linhas.length){ el.innerHTML='<div style="color:#888;font-size:13px">Nenhuma pessoa ainda. Adicione acima.</div>'; return; }
+  var h='<table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 6px;position:sticky;left:0;background:#fff">Nome</th><th style="text-align:left;padding:3px 6px">Função</th>'
+   +dias.map(function(d){var w=escDow(d);return '<th style="padding:2px 3px;'+(w===0?'background:#fde8d0':'')+'">'+Number(d.slice(8))+'<br><span style="font-weight:400;color:#888">'+ESC_DS[w]+'</span></th>';}).join('')
+   +'<th style="padding:2px 6px">Total</th><th></th></tr>';
+  lv.linhas.forEach(function(c){
+    h+='<tr><td style="padding:2px 4px;position:sticky;left:0;background:#fff"><input type="text" value="'+lvEsc(c.nome)+'" oninput="lvSetLinha(\''+c.id+'\',\'nome\',this.value)" style="width:120px;padding:4px;border:1px solid #ddd;border-radius:6px;font-size:12px"></td>'
+     +'<td style="padding:2px 4px"><input type="text" value="'+lvEsc(c.funcao)+'" list="lv-funcs" oninput="lvSetLinha(\''+c.id+'\',\'funcao\',this.value)" style="width:96px;padding:4px;border:1px solid #ddd;border-radius:6px;font-size:12px"></td>'
+     +dias.map(function(d){
+       var on=c.folgas.indexOf(d)>=0, w=escDow(d);
+       return '<td onclick="lvToggle(\''+c.id+'\',\''+d+'\')" style="text-align:center;cursor:pointer;border:1px solid #eee;min-width:20px;'+(on?'background:#1d9e75;color:#fff;font-weight:700':(w===0?'background:#fff6ea':''))+'">'+(on?'F':'')+'</td>';
+     }).join('')
+     +'<td style="text-align:center;font-weight:700;padding:0 6px">'+c.folgas.filter(function(d){return dias.indexOf(d)>=0;}).length+'</td>'
+     +'<td><a href="#" onclick="lvRemLinha(\''+c.id+'\');return false" style="color:#c0392b;text-decoration:none;padding:0 6px">✕</a></td></tr>';
+  });
+  h+='<tr><td style="padding:3px 6px;color:#666;position:sticky;left:0;background:#fff">Folgando</td><td></td>'+dias.map(function(d){
+    var n=lv.linhas.filter(function(c){return c.folgas.indexOf(d)>=0;}).length; return '<td style="text-align:center;color:#666;background:#f7f7f7">'+n+'</td>';
+  }).join('')+'<td></td><td></td></tr></table>';
+  h+='<div style="margin-top:8px;font-size:11px;color:#888">F = folga · toque numa célula para marcar ou desmarcar.</div>';
+  el.innerHTML=h;
+}
+async function lvSalvar(){
+  if(!lv.linhas.length){ lvMsg('Adicione pelo menos uma pessoa.',true); return; }
+  if(!lvDias().length){ lvMsg('Defina um período válido.',true); return; }
+  try{
+    var titulo=(lv.titulo||'').trim()||('Escala '+lvFmtBR(lv.ini)+' a '+lvFmtBR(lv.fim));
+    if(!lv.id) lv.id=lvRef().push().key;
+    await lvRef().child(lv.id).set({titulo:titulo,ini:lv.ini,fim:lv.fim,linhas:lv.linhas.map(function(l){return {nome:l.nome,funcao:l.funcao||'',folgas:l.folgas.slice()};}),atualizadoEm:new Date().toISOString()});
+    lv.titulo=titulo; var t=document.getElementById('lv-titulo'); if(t) t.value=titulo;
+    lvMsg('Escala salva.'); lvCarregarLista();
+  }catch(e){ lvMsg('Erro ao salvar: '+e.message,true); }
+}
+async function lvCarregarLista(){
+  try{
+    var sn=await lvRef().once('value'), v=sn.val()||{};
+    lv.lista=Object.keys(v).map(function(id){return {id:id,titulo:v[id].titulo||id,at:v[id].atualizadoEm||''};}).sort(function(a,b){return b.at.localeCompare(a.at);});
+    var s=document.getElementById('lv-lista'); if(!s) return;
+    s.innerHTML='<option value="">— nova escala —</option>'+lv.lista.map(function(x){return '<option value="'+x.id+'"'+(x.id===lv.id?' selected':'')+'>'+lvEsc(x.titulo)+'</option>';}).join('');
+  }catch(e){}
+}
+async function lvAbrirSalva(){
+  var id=document.getElementById('lv-lista').value;
+  if(!id){ lvNovoClick(true); return; }
+  try{
+    var sn=await lvRef().child(id).once('value'), v=sn.val(); if(!v){ lvMsg('Escala não encontrada.',true); return; }
+    var ls=v.linhas||[]; if(!Array.isArray(ls)) ls=Object.values(ls);
+    lv.id=id; lv.titulo=v.titulo||''; lv.ini=v.ini; lv.fim=v.fim;
+    lv.linhas=ls.map(function(l,i){var f=l.folgas||[]; if(!Array.isArray(f)) f=Object.values(f); return {id:'l'+i+Date.now().toString(36),nome:l.nome||'',funcao:l.funcao||'',folgas:f};});
+    lvRenderTela(); lvCarregarLista();
+  }catch(e){ lvMsg('Erro ao abrir: '+e.message,true); }
+}
+function lvNovoClick(semConfirmar){
+  if(semConfirmar!==true && lv.linhas.length && !confirm('Começar uma escala nova em branco? O que não foi salvo será perdido.')) return;
+  lvNovo(); lvRenderTela(); lvCarregarLista();
+}
+async function lvExcluir(){
+  if(!lv.id){ lvMsg('Esta escala ainda não foi salva.',true); return; }
+  if(!confirm('Excluir esta escala salva? Não dá para desfazer.')) return;
+  try{ await lvRef().child(lv.id).remove(); lvNovo(); lvRenderTela(); lvCarregarLista(); lvMsg('Escala excluída.'); }
+  catch(e){ lvMsg('Erro: '+e.message,true); }
+}
+async function lvPdf(){
+  var dias=lvDias();
+  if(!dias.length||!lv.linhas.length){ lvMsg('Monte a escala primeiro (período e pessoas).',true); return; }
+  try{
+    var slug=slugAtual(), tx=slug==='texas';
+    var C=tx?{dark:[122,31,31],acc:[163,45,45],soft:[250,238,238]}:{dark:[44,62,53],acc:[29,158,117],soft:[225,245,238]};
+    var logo=await fdCarregarImagem(tx?'icon-texas.png':'icon-cali.png');
+    var doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+    var W=doc.internal.pageSize.getWidth(), M=24, nome=tx?'Texas Country Bar':'Cali Cravings';
+    doc.setFillColor(C.dark[0],C.dark[1],C.dark[2]); doc.rect(0,0,W,64,'F');
+    var x=M; if(logo){ doc.addImage(logo.data,'PNG',M,12,40,40); x=M+52; }
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text(nome.toUpperCase(),x,34);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    doc.text(((lv.titulo||'ESCALA DE FOLGAS')+' · '+lvFmtBR(lv.ini)+' a '+lvFmtBR(lv.fim)).toUpperCase(),x,50);
+    var nd=dias.length;
+    var head=[['Nome','Função'].concat(dias.map(function(d){return Number(d.slice(8))+'\n'+ESC_DS[escDow(d)];})).concat(['Tot'])];
+    var rows=lv.linhas.map(function(c){
+      return [c.nome,c.funcao||''].concat(dias.map(function(d){return c.folgas.indexOf(d)>=0?'F':'';})).concat([String(c.folgas.filter(function(d){return dias.indexOf(d)>=0;}).length)]);
+    });
+    rows.push(['Folgando',''].concat(dias.map(function(d){return String(lv.linhas.filter(function(c){return c.folgas.indexOf(d)>=0;}).length);})).concat(['']));
+    var cw=Math.max(8,Math.min(17,(W-2*M-170-30)/nd));
+    var cs={0:{cellWidth:100,halign:'left',fontStyle:'bold'},1:{cellWidth:70,halign:'left'}}; for(var i=2;i<nd+2;i++) cs[i]={cellWidth:cw};
+    doc.autoTable({head:head,body:rows,startY:80,margin:{left:M,right:M},theme:'grid',
+      styles:{fontSize:nd>40?5.5:7,cellPadding:2,halign:'center',valign:'middle',lineColor:[220,220,220],lineWidth:0.4,textColor:[26,26,26]},
+      headStyles:{fillColor:C.dark,textColor:255,fontSize:nd>40?5:6.5},columnStyles:cs,
+      didParseCell:function(d){
+        var isCov=d.row.index===rows.length-1;
+        if(d.section==='head'&&d.column.index>=2&&d.column.index<nd+2){ if(escDow(dias[d.column.index-2])===0) d.cell.styles.fillColor=C.acc; }
+        if(d.section==='body'){
+          if(isCov){ d.cell.styles.fillColor=C.soft; d.cell.styles.textColor=[102,102,96]; return; }
+          if(d.column.index>=2&&d.column.index<nd+2){
+            var v=d.cell.raw, w2=escDow(dias[d.column.index-2]);
+            if(v==='F'){ d.cell.styles.fillColor=C.acc; d.cell.styles.textColor=255; d.cell.styles.fontStyle='bold'; }
+            else if(w2===0){ d.cell.styles.fillColor=[245,240,232]; }
+          }
+        }
+      }});
+    var yy=doc.lastAutoTable.finalY+12; doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(102,102,96);
+    doc.text('F = folga',M,yy);
+    doc.save('escala-'+slug+'-'+lv.ini+'-a-'+lv.fim+'.pdf'); lvMsg('PDF gerado.');
+  }catch(e){ lvMsg('Erro no PDF: '+e.message,true); }
+}
+(function(){
+  var _r = renderHomeTabEscala;
+  renderHomeTabEscala = function(perfil, body){
+    var r=_r.apply(this, arguments);
+    try{
+      var card=body.querySelector('.card');
+      if(card){
+        var b=document.createElement('button'); b.className='btn'; b.textContent='📝 Escala em branco (montar do zero)';
+        b.style.cssText='width:100%;margin-bottom:12px;background:#2C3E35;color:#fff'; b.onclick=lvAbrir;
+        card.insertBefore(b, card.children[1]||null);
+      }
+    }catch(e){}
+    return r;
+  };
+})();
+</script>
 </body>
 </html>
