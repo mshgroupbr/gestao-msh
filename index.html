@@ -277,6 +277,17 @@ body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
 .mn-row span{color:var(--tx2)}.mn-row b{text-align:right;font-weight:600}
 .mn-warn{margin-top:10px;background:var(--am-l);color:var(--am);border-radius:var(--rs);padding:10px;font-size:13px}
 .mn-h{font-size:13px;padding:6px 0;border-bottom:.5px solid var(--bdr)}.mn-h div{font-size:11px;color:var(--tx3)}
+.mn-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.mn-tab{flex:none;padding:8px 12px;border-radius:20px;border:1.5px solid var(--bdr2);background:var(--surf);font-size:12.5px;font-family:inherit;cursor:pointer;color:var(--tx);white-space:nowrap}
+.mn-tab i{font-style:normal;font-weight:700;opacity:.6;margin-left:3px}
+.mn-tab.on{background:var(--hd);border-color:var(--hd);color:#fff}
+.mn-filtros .btn-sec{padding:10px;font-size:13px}
+.mn-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px}
+.mn-box{background:var(--surf);border-radius:16px;padding:20px;width:100%;max-width:380px;display:flex;flex-direction:column}
+.mn-tb{border-collapse:collapse;width:100%;font-size:12.5px}
+.mn-tb th{background:var(--surf2);text-align:left;padding:6px 8px;font-size:11px;white-space:nowrap}
+.mn-tb td{padding:6px 8px;border-bottom:.5px solid var(--bdr);white-space:nowrap}
+.mn-tot td{font-weight:700;background:var(--surf2)}
 </style>
 </head>
 <body>
@@ -657,6 +668,7 @@ body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
       </div>
     </div>
     <div id="relatorios-conteudo"></div>
+    <div id="rel-manut"></div>
   </div>
 </div>
 
@@ -4668,15 +4680,22 @@ async function lvPdf(){
 var MAN_TIPOS=[['Elétrico','⚡'],['Água','🚰'],['Esgoto','🚽'],['Equipamento','⚙️'],['Outro','🔧']];
 var MAN_SETORES=['Cozinha','Salão','Bar','Outros'];
 var MAN_PRIO=['Baixa','Média','Alta','Urgente'];
-var MAN_STATUS=['Aberto','Em andamento','Aguardando peça/orçamento','Resolvido'];
-var MAN_COR={'Aberto':['#a32d2d','#fcebeb'],'Em andamento':['#b5720b','#faeeda'],'Aguardando peça/orçamento':['#185fa5','#e6f1fb'],'Resolvido':['#1d9e75','#e1f5ee']};
+var MAN_STATUS=['Aberto','Parado','Em andamento','Aguardando técnico','Orçamento aprovado','Orçamento não aprovado','Parcialmente concluído','Concluído'];
+var MAN_COR={'Aberto':['#a32d2d','#fcebeb'],'Parado':['#555555','#e8e8e8'],'Em andamento':['#b5720b','#faeeda'],'Aguardando técnico':['#185fa5','#e6f1fb'],'Orçamento aprovado':['#0f766e','#d5f3ee'],'Orçamento não aprovado':['#9a3412','#ffe8d6'],'Parcialmente concluído':['#4d7c0f','#ecf7cf'],'Concluído':['#1d9e75','#e1f5ee']};
 var MAN_PCOR={'Baixa':'#999993','Média':'#185fa5','Alta':'#b5720b','Urgente':'#a32d2d'};
-var man={view:'lista',all:{},f:{un:'atual',st:'abertos',tipo:'',setor:''},sel:null,novo:null,fotos:[],on:false,detFotos:null};
+var MAN_ESPEC=['Elétrica','Hidráulica / Esgoto','Refrigeração / Equipamentos','Gás','Predial / Geral','Outro'];
+var man={view:'lista',all:{},forn:{},alertas:{},f:{un:'atual',st:'pend',tipo:'',setor:''},sel:null,novo:null,fotos:[],on:false,detFotos:null,edF:null};
+var manRel={meses:6,un:'atual'};
 function manEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function manRef(){ return db.ref('manutencao/chamados'); }
 function manHoje(){ return formatDateLocal(new Date()); }
 function manFmt(d){ return d ? d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '—'; }
 function manDias(d){ if(!d) return 0; var a=new Date(d+'T12:00:00'), b=new Date(manHoje()+'T12:00:00'); return Math.max(0,Math.round((b-a)/86400000)); }
+function manSt(c){ var s=c.status; if(s==='Resolvido') return 'Concluído'; if(s==='Aguardando peça/orçamento') return 'Aguardando técnico'; return s||'Aberto'; }
+function manFechado(c){ return manSt(c)==='Concluído'; }
+function manCustoDia(c){ return c.resolvidoDia||c.abertura||''; }
+function manBRL(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function manFone(t){ var d=String(t||'').replace(/\D/g,''); if(!d) return ''; if(d.length<=11) d='55'+d; return d; }
 function manGestor(){ var p=sessionStorage.getItem('perfilAtivo'); return p==='master'||p==='gerente'||sessionStorage.getItem('manGestor')==='1'; }
 function manNomeGestor(){ return sessionStorage.getItem('gerenteNome') || (sessionStorage.getItem('perfilAtivo')==='master'?'Master':'Gerência'); }
 function manPin(cb){
@@ -4684,69 +4703,82 @@ function manPin(cb){
   var s=prompt('Senha da gerência:'); if(s===null) return;
   if(s.trim()==='000813'){ sessionStorage.setItem('manGestor','1'); cb(); } else toast('Senha incorreta');
 }
+function manInit(){
+  if(man.on) return; man.on=true;
+  try{
+    manRef().on('value',function(s){ man.all=s.val()||{}; var sc=document.getElementById('s-manut'); if(sc&&sc.classList.contains('active')) manRender(); var rl=document.getElementById('s-relatorios'); if(rl&&rl.classList.contains('active')) manRelRender(); });
+    db.ref('manutencao/fornecedores').on('value',function(s){ man.forn=s.val()||{}; var sc=document.getElementById('s-manut'); if(sc&&sc.classList.contains('active')&&(man.view==='forn'||man.view==='det')) manRender(); });
+    db.ref('manutencao/config/alertas').on('value',function(s){ man.alertas=s.val()||{}; var sc=document.getElementById('s-manut'); if(sc&&sc.classList.contains('active')&&man.view==='forn') manRender(); });
+  }catch(e){ console.warn(e); }
+}
 function manAbrir(){ man.view='lista'; goTo('s-manut'); }
 function manVoltar(){
-  if(man.view!=='lista'){ man.view='lista'; man.sel=null; manRender(); return; }
+  if(man.view!=='lista'){ man.view='lista'; man.sel=null; man.edF=null; manRender(); return; }
   var p=sessionStorage.getItem('perfilAtivo'); goTo(p==='master'||p==='gerente' ? 's-home' : 's-perfil');
 }
-function manLista(){
-  return Object.keys(man.all).map(function(k){ var c=man.all[k]; c.id=k; return c; });
-}
+function manLista(){ return Object.keys(man.all).map(function(k){ var c=man.all[k]; c.id=k; return c; }); }
 function manRender(){
-  var un=getUnidadeAtual(); var b=document.getElementById('man-badge'); if(b) b.textContent=un;
-  if(!man.on){
-    man.on=true;
-    try{ manRef().on('value',function(s){ man.all=s.val()||{}; var sc=document.getElementById('s-manut'); if(sc&&sc.classList.contains('active')) manRender(); }); }catch(e){ console.warn(e); }
-  }
+  var b=document.getElementById('man-badge'); if(b) b.textContent=getUnidadeAtual();
+  manInit();
   var el=document.getElementById('man-body'); if(!el) return;
   if(man.view==='novo') return manRenderForm(el);
   if(man.view==='det') return manRenderDet(el);
+  if(man.view==='forn') return manRenderForn(el);
   manRenderLista(el);
 }
+function manNoEscopo(c){
+  var un=getUnidadeAtual(), f=man.f.un;
+  if(f==='atual') return c.unidade===un;
+  if(f==='todas') return true;
+  return c.unidade===f;
+}
 function manFiltrados(){
-  var un=getUnidadeAtual(), f=man.f;
+  var f=man.f;
   return manLista().filter(function(c){
-    if(f.un==='atual' && c.unidade!==un) return false;
-    if(f.un==='Cali Cravings' && c.unidade!=='Cali Cravings') return false;
-    if(f.un==='Texas Country Bar' && c.unidade!=='Texas Country Bar') return false;
-    if(f.st==='abertos' && c.status==='Resolvido') return false;
-    if(f.st==='resolvidos' && c.status!=='Resolvido') return false;
+    if(!manNoEscopo(c)) return false;
+    var s=manSt(c);
+    if(f.st==='pend' && s==='Concluído') return false;
+    if(f.st!=='pend' && f.st!=='todos' && s!==f.st) return false;
     if(f.tipo && c.tipo!==f.tipo) return false;
     if(f.setor && c.setor!==f.setor) return false;
     return true;
   }).sort(function(a,b){
-    var ra=a.status==='Resolvido'?1:0, rb=b.status==='Resolvido'?1:0; if(ra!==rb) return ra-rb;
+    var ra=manFechado(a)?1:0, rb=manFechado(b)?1:0; if(ra!==rb) return ra-rb;
     var pa=MAN_PRIO.indexOf(b.prioridade)-MAN_PRIO.indexOf(a.prioridade); if(pa) return pa;
     return (a.criadoTs||0)-(b.criadoTs||0);
   });
 }
 function manSet(k,v){ man.f[k]=v; manRender(); }
 function manTipoIco(t){ var x=MAN_TIPOS.filter(function(y){return y[0]===t;})[0]; return x?x[1]:'🔧'; }
+function manBadge(s){ var c=MAN_COR[s]||MAN_COR['Aberto']; return '<span class="mn-bd" style="background:'+c[1]+';color:'+c[0]+'">'+manEsc(s)+'</span>'; }
 function manRenderLista(el){
-  var un=getUnidadeAtual(), todas=manLista();
-  var base=todas.filter(function(c){ return man.f.un==='atual'?c.unidade===un:(man.f.un==='todas'?true:c.unidade===man.f.un); });
-  var abertos=base.filter(function(c){return c.status==='Aberto';}).length;
-  var and=base.filter(function(c){return c.status==='Em andamento'||c.status==='Aguardando peça/orçamento';}).length;
-  var urg=base.filter(function(c){return c.status!=='Resolvido'&&(c.prioridade==='Urgente'||c.impacto);}).length;
-  var mes=manHoje().slice(0,7), res=base.filter(function(c){return c.status==='Resolvido'&&(c.resolvidoDia||'').slice(0,7)===mes;}).length;
+  var un=getUnidadeAtual(), base=manLista().filter(manNoEscopo);
+  var conta=function(arr){ return base.filter(function(c){ return arr.indexOf(manSt(c))>=0; }).length; };
+  var mes=manHoje().slice(0,7);
+  var abertos=conta(['Aberto']), and=conta(['Em andamento','Orçamento aprovado','Parcialmente concluído']), par=conta(['Parado','Aguardando técnico','Orçamento não aprovado']);
+  var urg=base.filter(function(c){return !manFechado(c)&&(c.prioridade==='Urgente'||c.impacto);}).length;
+  var res=base.filter(function(c){return manFechado(c)&&(c.resolvidoDia||'').slice(0,7)===mes;}).length;
+  var custoMes=base.filter(function(c){return c.custo>0&&manCustoDia(c).slice(0,7)===mes;}).reduce(function(a,c){return a+Number(c.custo);},0);
   var lista=manFiltrados();
   var opt=function(v,l,cur){ return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+l+'</option>'; };
+  var tabs=[['pend','Pendentes',base.filter(function(c){return !manFechado(c);}).length]].concat(MAN_STATUS.map(function(s){return [s,s,conta([s])];})).concat([['todos','Todos',base.length]]);
   var h='<button class="btn-or" onclick="manNovo()">＋ Abrir chamado de manutenção</button>'
-   +'<div class="mn-stats"><div class="mn-st"><b style="color:#a32d2d">'+abertos+'</b><span>Abertos</span></div><div class="mn-st"><b style="color:#b5720b">'+and+'</b><span>Em andamento</span></div><div class="mn-st"><b style="color:#a32d2d">'+urg+'</b><span>Urgentes / param operação</span></div><div class="mn-st"><b style="color:#1d9e75">'+res+'</b><span>Resolvidos no mês</span></div></div>'
+   +'<div class="mn-stats"><div class="mn-st"><b style="color:#a32d2d">'+abertos+'</b><span>Abertos</span></div><div class="mn-st"><b style="color:#b5720b">'+and+'</b><span>Em andamento</span></div><div class="mn-st"><b style="color:#555">'+par+'</b><span>Parados / aguardando</span></div><div class="mn-st"><b style="color:#a32d2d">'+urg+'</b><span>Urgentes / param operação</span></div><div class="mn-st"><b style="color:#1d9e75">'+res+'</b><span>Concluídos no mês</span></div><div class="mn-st"><b style="font-size:18px">'+manBRL(custoMes)+'</b><span>Custo do mês</span></div></div>'
+   +'<div class="mn-tabs">'+tabs.map(function(t){ return '<button class="mn-tab'+(man.f.st===t[0]?' on':'')+'" onclick="manSet(\'st\',\''+t[0]+'\')">'+t[1]+' <i>'+t[2]+'</i></button>'; }).join('')+'</div>'
    +'<div class="mn-filtros"><select onchange="manSet(\'un\',this.value)">'+opt('atual',un,man.f.un)+opt('Cali Cravings','Cali Cravings',man.f.un)+opt('Texas Country Bar','Texas Country Bar',man.f.un)+opt('todas','Grupo todo',man.f.un)+'</select>'
-   +'<select onchange="manSet(\'st\',this.value)">'+opt('abertos','Não resolvidos',man.f.st)+opt('todos','Todos',man.f.st)+opt('resolvidos','Resolvidos',man.f.st)+'</select>'
    +'<select onchange="manSet(\'tipo\',this.value)">'+opt('','Todos os tipos',man.f.tipo)+MAN_TIPOS.map(function(t){return opt(t[0],t[1]+' '+t[0],man.f.tipo);}).join('')+'</select>'
-   +'<select onchange="manSet(\'setor\',this.value)">'+opt('','Todos os setores',man.f.setor)+MAN_SETORES.map(function(s){return opt(s,s,man.f.setor);}).join('')+'</select></div>'
-   +'<div style="display:flex;gap:8px"><button class="btn-sec" style="flex:1" onclick="manPdf()">📄 Relatório PDF</button></div>';
-  if(!lista.length) h+='<div class="card" style="text-align:center;color:#888;padding:26px">Nenhum chamado com esses filtros. 🎉</div>';
+   +'<select onchange="manSet(\'setor\',this.value)">'+opt('','Todos os setores',man.f.setor)+MAN_SETORES.map(function(s){return opt(s,s,man.f.setor);}).join('')+'</select>'
+   +'<button class="btn-sec" onclick="manPdf()">📄 Relatório PDF</button></div>'
+   +'<button class="btn-sec" onclick="manPin(function(){man.view=\'forn\';manRender();})">👷 Técnicos, fornecedores e avisos de urgência</button>';
+  if(!lista.length) h+='<div class="card" style="text-align:center;color:#888;padding:26px">Nenhum chamado nesta aba. 🎉</div>';
   lista.forEach(function(c){
-    var cor=MAN_COR[c.status]||MAN_COR['Aberto'], dias=manDias(c.abertura), desde=manDias(c.desde);
+    var dias=manDias(c.abertura), desde=manDias(c.desde), fech=manFechado(c);
     h+='<div class="card mn-card" onclick="manDet(\''+c.id+'\')">'
      +(c.thumb?'<img class="mn-th" src="'+c.thumb+'">':'<div class="mn-th mn-th0">'+manTipoIco(c.tipo)+'</div>')
-     +'<div style="flex:1;min-width:0"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="mn-bd" style="background:'+cor[1]+';color:'+cor[0]+'">'+manEsc(c.status)+'</span><span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade||'Média')+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
+     +'<div style="flex:1;min-width:0"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px">'+manBadge(manSt(c))+'<span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade||'Média')+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
      +'<div style="font-weight:700;font-size:14px">'+manTipoIco(c.tipo)+' '+manEsc(c.tipo)+' · '+manEsc(c.setor)+(c.local?' · '+manEsc(c.local):'')+'</div>'
      +'<div style="font-size:12.5px;color:#555;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+manEsc(c.descricao)+'</div>'
-     +'<div style="font-size:11.5px;color:#888;margin-top:5px">'+manEsc(c.unidade)+' · '+manEsc(c.solicitante)+' · aberto em '+manFmt(c.abertura)+(c.status!=='Resolvido'?' ('+dias+'d)':'')+(c.desde&&c.status!=='Resolvido'&&desde>dias?' · problema há '+desde+'d':'')+'</div></div></div>';
+     +'<div style="font-size:11.5px;color:#888;margin-top:5px">'+manEsc(c.unidade)+' · '+manEsc(c.solicitante)+' · aberto em '+manFmt(c.abertura)+(!fech?' ('+dias+'d)':'')+(c.desde&&!fech&&desde>dias?' · problema há '+desde+'d':'')+(c.responsavel?' · 👷 '+manEsc(c.responsavel):'')+'</div></div></div>';
   });
   el.innerHTML=h;
 }
@@ -4759,7 +4791,7 @@ function manN(k,v){ man.novo[k]=v; }
 function manEscolha(k,v){ man.novo[k]=v; manRenderForm(document.getElementById('man-body')); }
 function manRenderForm(el){
   var n=man.novo;
-  var chips=function(k,arr,ico){ return '<div class="mn-chips">'+arr.map(function(x){ var v=Array.isArray(x)?x[0]:x, i=Array.isArray(x)?x[1]+' ':''; return '<button type="button" class="mn-chip'+(n[k]===v?' on':'')+'" onclick="manEscolha(\''+k+'\',\''+v+'\')">'+i+v+'</button>'; }).join('')+'</div>'; };
+  var chips=function(k,arr){ return '<div class="mn-chips">'+arr.map(function(x){ var v=Array.isArray(x)?x[0]:x, i=Array.isArray(x)?x[1]+' ':''; return '<button type="button" class="mn-chip'+(n[k]===v?' on':'')+'" onclick="manEscolha(\''+k+'\',\''+v+'\')">'+i+v+'</button>'; }).join('')+'</div>'; };
   el.innerHTML='<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:10px">Novo chamado de manutenção</div>'
    +'<div class="field"><label class="fl">Unidade</label><select onchange="manN(\'unidade\',this.value)"><option'+(n.unidade==='Cali Cravings'?' selected':'')+'>Cali Cravings</option><option'+(n.unidade==='Texas Country Bar'?' selected':'')+'>Texas Country Bar</option></select></div>'
    +'<div class="field"><label class="fl">Nome do solicitante *</label><input type="text" value="'+manEsc(n.solicitante)+'" placeholder="Quem está abrindo o chamado" oninput="manN(\'solicitante\',this.value)"></div>'
@@ -4797,6 +4829,18 @@ async function manFoto(inp){
   }
   inp.value=''; manRenderFotos();
 }
+function manMsgUrgente(c){
+  return '🚨 *CHAMADO URGENTE DE MANUTENÇÃO* — '+c.unidade+'\n'+manTipoIco(c.tipo)+' '+c.tipo+' · '+c.setor+(c.local?' · '+c.local:'')+'\n'+c.descricao+'\n\n'+(c.impacto?'⛔ Está parando a operação\n':'')+'Aberto por '+c.solicitante+' em '+manFmt(c.abertura)+(c.desde&&c.desde!==c.abertura?'\nProblema desde '+manFmt(c.desde):'');
+}
+function manAvisoUrgente(c){
+  var d=document.createElement('div'); d.id='man-aviso'; d.className='mn-ov';
+  var msg=encodeURIComponent(manMsgUrgente(c));
+  var als=Object.keys(man.alertas).map(function(k){return man.alertas[k];}).filter(function(a){return manFone(a.tel);});
+  var btns=als.length ? als.map(function(a){ return '<a class="btn-or" style="text-decoration:none;margin-top:8px" target="_blank" href="https://wa.me/'+manFone(a.tel)+'?text='+msg+'">💬 Avisar '+manEsc(a.nome||'gerência')+'</a>'; }).join('')
+    : '<a class="btn-or" style="text-decoration:none;margin-top:8px" target="_blank" href="https://wa.me/?text='+msg+'">💬 Escolher contato no WhatsApp</a><div style="font-size:11.5px;color:#888;margin-top:6px">Dica: cadastre os números da gerência em “Técnicos, fornecedores e avisos de urgência” para o aviso já sair endereçado.</div>';
+  d.innerHTML='<div class="mn-box"><div style="font-size:34px;text-align:center">🚨</div><div style="font-weight:700;font-size:16px;text-align:center;margin:6px 0">Chamado urgente enviado</div><div style="font-size:13px;color:#555;text-align:center">Avise a gerência agora pelo WhatsApp (a mensagem já vai pronta).</div>'+btns+'<button class="btn-sec" style="margin-top:8px" onclick="document.getElementById(\'man-aviso\').remove()">Agora não</button></div>';
+  document.body.appendChild(d);
+}
 async function manEnviar(){
   var n=man.novo;
   if(!(n.solicitante||'').trim()){ toast('Informe o nome do solicitante'); return; }
@@ -4814,6 +4858,7 @@ async function manEnviar(){
     await manRef().child(id).set(rec);
     await manRef().child(id).child('historico').push({ts:Date.now(),por:n.solicitante.trim(),acao:'Chamado aberto'});
     toast('Chamado enviado ✅'); man.view='lista'; man.novo=null; man.fotos=[]; manRender();
+    if(rec.prioridade==='Urgente'||rec.impacto) manAvisoUrgente(rec);
   }catch(e){ toast('Erro ao enviar: '+e.message); if(b){ b.disabled=false; b.textContent='Enviar chamado'; } }
 }
 async function manDet(id){
@@ -4821,30 +4866,37 @@ async function manDet(id){
   try{ var s=await db.ref('manutencao/fotos/'+id).once('value'); var v=s.val()||[]; if(!Array.isArray(v)) v=Object.values(v); man.detFotos=v; }catch(e){ man.detFotos=[]; }
   if(man.view==='det'&&man.sel===id) manRender();
 }
+function manFornLista(){ return Object.keys(man.forn).map(function(k){ var f=man.forn[k]; f.id=k; return f; }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); }); }
+function manAcharForn(nome){ var n=(nome||'').trim().toLowerCase(); if(!n) return null; return manFornLista().filter(function(f){ return (f.nome||'').trim().toLowerCase()===n; })[0]||null; }
 function manRenderDet(el){
   var c=man.all[man.sel]; if(!c){ el.innerHTML='<div class="card">Chamado não encontrado.</div><button class="btn-sec" onclick="manVoltar()">‹ Voltar</button>'; return; }
-  var cor=MAN_COR[c.status]||MAN_COR['Aberto'], g=manGestor();
+  var st=manSt(c), g=manGestor();
   var hist=c.historico?Object.values(c.historico).sort(function(a,b){return a.ts-b.ts;}):[];
   var row=function(l,v){ return v?'<div class="mn-row"><span>'+l+'</span><b>'+v+'</b></div>':''; };
   var h='<button class="btn-sec" onclick="manVoltar()">‹ Voltar à lista</button>'
-   +'<div class="card"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span class="mn-bd" style="background:'+cor[1]+';color:'+cor[0]+'">'+manEsc(c.status)+'</span><span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade)+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
+   +'<div class="card"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+manBadge(st)+'<span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade)+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
    +'<div style="font-weight:700;font-size:16px;margin-bottom:6px">'+manTipoIco(c.tipo)+' '+manEsc(c.tipo)+' · '+manEsc(c.setor)+'</div>'
    +'<div style="font-size:14px;margin-bottom:10px;white-space:pre-wrap">'+manEsc(c.descricao)+'</div>'
-   +row('Unidade',manEsc(c.unidade))+row('Local / equipamento',manEsc(c.local))+row('Solicitante',manEsc(c.solicitante))+row('Aberto em',manFmt(c.abertura)+(c.status!=='Resolvido'?' ('+manDias(c.abertura)+' dias)':''))+row('Problema desde',manFmt(c.desde))
-   +row('Responsável',manEsc(c.responsavel))+row('Previsão',c.previsao?manFmt(c.previsao):'')+row('Custo',c.custo?'R$ '+Number(c.custo).toLocaleString('pt-BR',{minimumFractionDigits:2}):'')+row('Resolvido em',c.resolvidoDia?manFmt(c.resolvidoDia):'');
+   +row('Unidade',manEsc(c.unidade))+row('Local / equipamento',manEsc(c.local))+row('Solicitante',manEsc(c.solicitante))+row('Aberto em',manFmt(c.abertura)+(!manFechado(c)?' ('+manDias(c.abertura)+' dias)':''))+row('Problema desde',manFmt(c.desde))
+   +row('Responsável',manEsc(c.responsavel))+row('Previsão',c.previsao?manFmt(c.previsao):'')+row('Custo',c.custo?manBRL(c.custo):'')+row('Concluído em',c.resolvidoDia?manFmt(c.resolvidoDia):'');
   var rec=manLista().filter(function(x){ return x.id!==c.id && x.unidade===c.unidade && x.tipo===c.tipo && (x.local||'').trim() && (x.local||'').trim().toLowerCase()===(c.local||'').trim().toLowerCase() && (c.criadoTs-(x.criadoTs||0))<90*86400000 && (x.criadoTs||0)<c.criadoTs; }).length;
   if(rec) h+='<div class="mn-warn">🔁 Reincidente: mesmo local/tipo teve '+rec+' chamado(s) nos últimos 90 dias.</div>';
+  var tec=g?manAcharForn(c.responsavel):null;
+  if(tec&&manFone(tec.telefone)){
+    var tm=encodeURIComponent('Olá '+tec.nome+', chamado de manutenção no '+c.unidade+':\n'+c.tipo+' · '+c.setor+(c.local?' · '+c.local:'')+'\n'+c.descricao+(c.desde?'\nProblema desde '+manFmt(c.desde):'')+'\nPode atender? Obrigado!');
+    h+='<div style="display:flex;gap:8px;margin-top:10px"><a class="btn-sec" style="flex:1;text-align:center;text-decoration:none" href="tel:+'+manFone(tec.telefone)+'">📞 Ligar</a><a class="btn-sec" style="flex:1;text-align:center;text-decoration:none" target="_blank" href="https://wa.me/'+manFone(tec.telefone)+'?text='+tm+'">💬 Chamar '+manEsc(tec.nome.split(' ')[0])+'</a></div>';
+  }
   h+='</div>';
   if(c.nFotos){
     h+='<div class="card"><div class="fl">Fotos ('+c.nFotos+')</div>'+(man.detFotos===null?'<div style="color:#888;font-size:13px">Carregando fotos…</div>':'<div class="mn-fotos">'+man.detFotos.map(function(f){return '<div class="mn-f"><img src="'+f+'" onclick="manVerFoto(this.src)"></div>';}).join('')+'</div>')+'</div>';
   }
   if(hist.length) h+='<div class="card"><div class="fl">Histórico</div>'+hist.map(function(x){ var d=new Date(x.ts); return '<div class="mn-h"><b>'+manEsc(x.acao)+'</b>'+(x.obs?' — '+manEsc(x.obs):'')+'<div>'+d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' · '+manEsc(x.por)+'</div></div>'; }).join('')+'</div>';
   if(g){
-    h+='<div class="card"><div class="fl">Atualizar (gerência)</div>'
-     +'<div class="field"><label class="fl">Status</label><select id="mg-st">'+MAN_STATUS.map(function(s){return '<option'+(c.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
-     +'<div class="field"><label class="fl">Responsável / fornecedor</label><input type="text" id="mg-resp" value="'+manEsc(c.responsavel||'')+'"></div>'
+    h+='<div class="card"><div class="fl">Status do serviço (gerência)</div>'
+     +'<div class="mn-chips" id="mg-chips" style="margin-bottom:10px">'+MAN_STATUS.map(function(s){ var k=MAN_COR[s]; return '<button type="button" class="mn-chip'+(st===s?' on':'')+'" data-s="'+s+'" style="'+(st===s?'background:'+k[0]+';border-color:'+k[0]+';color:#fff':'')+'" onclick="manPickSt(this)">'+s+'</button>'; }).join('')+'</div><input type="hidden" id="mg-st" value="'+manEsc(st)+'">'
+     +'<div class="field"><label class="fl">Responsável / técnico / fornecedor</label><input type="text" id="mg-resp" list="mg-forns" value="'+manEsc(c.responsavel||'')+'" placeholder="Escolha da lista ou digite"><datalist id="mg-forns">'+manFornLista().map(function(f){return '<option value="'+manEsc(f.nome)+'">';}).join('')+'</datalist></div>'
      +'<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label class="fl">Previsão</label><input type="date" id="mg-prev" value="'+(c.previsao||'')+'"></div><div class="field" style="flex:1"><label class="fl">Custo (R$)</label><input type="text" inputmode="decimal" id="mg-custo" value="'+(c.custo?String(c.custo).replace('.',','):'')+'"></div></div>'
-     +'<div class="field"><label class="fl">Observação</label><textarea id="mg-obs" rows="2" placeholder="O que foi feito / combinado"></textarea></div>'
+     +'<div class="field"><label class="fl">Observação</label><textarea id="mg-obs" rows="2" placeholder="O que foi feito / combinado / motivo"></textarea></div>'
      +'<button class="btn-or" onclick="manSalvarGestao()">Salvar atualização</button>'
      +'<button class="btn-sec" style="margin-top:8px;color:#a32d2d;border-color:#a32d2d" onclick="manExcluir()">Excluir chamado</button></div>';
   } else {
@@ -4853,23 +4905,28 @@ function manRenderDet(el){
   h+='<button class="btn-sec" onclick="manZap()">📲 Compartilhar no WhatsApp</button>';
   el.innerHTML=h;
 }
+function manPickSt(b){
+  var s=b.getAttribute('data-s'); document.getElementById('mg-st').value=s;
+  [].forEach.call(document.querySelectorAll('#mg-chips .mn-chip'),function(x){ var on=x.getAttribute('data-s')===s, k=MAN_COR[x.getAttribute('data-s')]; x.classList.toggle('on',on); x.style.cssText=on?'background:'+k[0]+';border-color:'+k[0]+';color:#fff':''; });
+}
 function manVerFoto(src){
   var d=document.createElement('div'); d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;padding:10px';
   d.onclick=function(){ d.remove(); }; var i=document.createElement('img'); i.src=src; i.style.cssText='max-width:100%;max-height:100%;border-radius:8px'; d.appendChild(i); document.body.appendChild(d);
 }
+function cotNumSafe(s){ s=String(s||'').trim(); if(!s) return 0; var n=/,/.test(s)?parseFloat(s.replace(/\./g,'').replace(',','.')):parseFloat(s); return isNaN(n)?0:n; }
 async function manSalvarGestao(){
   var c=man.all[man.sel]; if(!c) return;
   var st=document.getElementById('mg-st').value, resp=document.getElementById('mg-resp').value.trim(), prev=document.getElementById('mg-prev').value, custo=cotNumSafe(document.getElementById('mg-custo').value), obs=document.getElementById('mg-obs').value.trim();
+  var ant=manSt(c);
   var up={status:st,responsavel:resp,previsao:prev||null,custo:custo||null};
-  up.resolvidoDia = st==='Resolvido' ? (c.resolvidoDia||manHoje()) : null;
-  var acoes=[]; if(st!==c.status) acoes.push('Status: '+c.status+' → '+st); if(resp!==(c.responsavel||'')) acoes.push('Responsável: '+(resp||'—')); if((prev||'')!==(c.previsao||'')) acoes.push('Previsão: '+(prev?manFmt(prev):'—')); if((custo||0)!==(Number(c.custo)||0)) acoes.push('Custo: R$ '+(custo||0));
+  up.resolvidoDia = st==='Concluído' ? (c.resolvidoDia||manHoje()) : null;
+  var acoes=[]; if(st!==ant) acoes.push('Status: '+ant+' → '+st); if(resp!==(c.responsavel||'')) acoes.push('Responsável: '+(resp||'—')); if((prev||'')!==(c.previsao||'')) acoes.push('Previsão: '+(prev?manFmt(prev):'—')); if((custo||0)!==(Number(c.custo)||0)) acoes.push('Custo: '+manBRL(custo||0));
   try{
     await manRef().child(man.sel).update(up);
     if(acoes.length||obs) await manRef().child(man.sel).child('historico').push({ts:Date.now(),por:manNomeGestor(),acao:acoes.join(' · ')||'Observação',obs:obs||null});
     toast('Atualizado ✅');
   }catch(e){ toast('Erro: '+e.message); }
 }
-function cotNumSafe(s){ s=String(s||'').trim(); if(!s) return 0; var n=/,/.test(s)?parseFloat(s.replace(/\./g,'').replace(',','.')):parseFloat(s); return isNaN(n)?0:n; }
 async function manExcluir(){
   if(!confirm('Excluir este chamado definitivamente? Não dá para desfazer.')) return;
   try{ await db.ref('manutencao/fotos/'+man.sel).remove(); await manRef().child(man.sel).remove(); toast('Chamado excluído'); man.view='lista'; man.sel=null; manRender(); }
@@ -4877,19 +4934,97 @@ async function manExcluir(){
 }
 function manZap(){
   var c=man.all[man.sel]; if(!c) return;
-  var t='🛠️ *Chamado de manutenção* — '+c.unidade+'\n'+manTipoIco(c.tipo)+' '+c.tipo+' · '+c.setor+(c.local?' · '+c.local:'')+'\n'+c.descricao+'\n\nPrioridade: '+c.prioridade+(c.impacto?' (⛔ para a operação)':'')+'\nStatus: '+c.status+'\nAberto em '+manFmt(c.abertura)+' por '+c.solicitante+(c.desde?'\nProblema desde '+manFmt(c.desde):'');
+  var t='🛠️ *Chamado de manutenção* — '+c.unidade+'\n'+manTipoIco(c.tipo)+' '+c.tipo+' · '+c.setor+(c.local?' · '+c.local:'')+'\n'+c.descricao+'\n\nPrioridade: '+c.prioridade+(c.impacto?' (⛔ para a operação)':'')+'\nStatus: '+manSt(c)+'\nAberto em '+manFmt(c.abertura)+' por '+c.solicitante+(c.desde?'\nProblema desde '+manFmt(c.desde):'');
   window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');
 }
+function manRenderForn(el){
+  var e=man.edF, fs=manFornLista(), als=Object.keys(man.alertas).map(function(k){var a=man.alertas[k];a.id=k;return a;});
+  var h='<button class="btn-sec" onclick="manVoltar()">‹ Voltar à lista</button>'
+   +'<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:4px">🚨 Avisos de urgência (WhatsApp)</div><div style="font-size:12px;color:#666;margin-bottom:10px">Quando alguém abre um chamado <b>Urgente</b> ou que <b>para a operação</b>, o app abre o WhatsApp com a mensagem pronta para estes contatos (a pessoa só toca em enviar).</div>'
+   +(als.length?als.map(function(a){ return '<div class="mn-row"><span>'+manEsc(a.nome)+' · '+manEsc(a.tel)+'</span><b><a href="#" onclick="manRemAlerta(\''+a.id+'\');return false" style="color:#a32d2d;text-decoration:none">✕</a></b></div>'; }).join(''):'<div style="font-size:13px;color:#888;margin-bottom:6px">Nenhum contato ainda.</div>')
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input type="text" id="al-nome" placeholder="Nome" style="flex:1;min-width:110px"><input type="tel" id="al-tel" placeholder="(47) 99999-9999" style="flex:1;min-width:130px"><button class="btn-sec" style="width:auto" onclick="manAddAlerta()">Adicionar</button></div></div>'
+   +'<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:10px">'+(e&&e.id?'Editar':'Novo')+' técnico / fornecedor</div>'
+   +'<div class="field"><label class="fl">Nome *</label><input type="text" id="fn-nome" value="'+manEsc(e&&e.nome||'')+'" placeholder="Nome ou empresa"></div>'
+   +'<div class="field"><label class="fl">Especialidade</label><select id="fn-esp">'+MAN_ESPEC.map(function(s){return '<option'+((e&&e.especialidade)===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
+   +'<div class="field"><label class="fl">Telefone / WhatsApp *</label><input type="tel" id="fn-tel" value="'+manEsc(e&&e.telefone||'')+'" placeholder="(47) 99999-9999"></div>'
+   +'<div class="field"><label class="fl">Observação</label><input type="text" id="fn-obs" value="'+manEsc(e&&e.obs||'')+'" placeholder="Horário, valor da visita, etc."></div>'
+   +'<button class="btn-or" onclick="manSalvarForn()">'+(e&&e.id?'Salvar alterações':'Cadastrar')+'</button>'+(e&&e.id?'<button class="btn-sec" style="margin-top:8px" onclick="man.edF=null;manRender()">Cancelar edição</button>':'')+'</div>'
+   +'<div class="fl" style="margin:4px 2px">Cadastrados ('+fs.length+')</div>';
+  if(!fs.length) h+='<div class="card" style="text-align:center;color:#888">Nenhum técnico cadastrado.</div>';
+  fs.forEach(function(f){
+    var fo=manFone(f.telefone);
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><div><div style="font-weight:700;font-size:15px">'+manEsc(f.nome)+'</div><div style="font-size:12px;color:#666">'+manEsc(f.especialidade||'')+(f.obs?' · '+manEsc(f.obs):'')+'</div><div style="font-size:13px;margin-top:4px">'+manEsc(f.telefone||'')+'</div></div></div>'
+     +'<div style="display:flex;gap:8px;margin-top:10px">'+(fo?'<a class="btn-sec" style="flex:1;text-align:center;text-decoration:none" href="tel:+'+fo+'">📞 Ligar</a><a class="btn-sec" style="flex:1;text-align:center;text-decoration:none" target="_blank" href="https://wa.me/'+fo+'">💬 WhatsApp</a>':'')+'<button class="btn-sec" style="flex:1" onclick="manEditForn(\''+f.id+'\')">Editar</button><button class="btn-sec" style="flex:1;color:#a32d2d" onclick="manExcluirForn(\''+f.id+'\')">Excluir</button></div></div>';
+  });
+  el.innerHTML=h;
+}
+async function manSalvarForn(){
+  var nome=document.getElementById('fn-nome').value.trim(), tel=document.getElementById('fn-tel').value.trim();
+  if(!nome||!tel){ toast('Informe nome e telefone'); return; }
+  var rec={nome:nome,especialidade:document.getElementById('fn-esp').value,telefone:tel,obs:document.getElementById('fn-obs').value.trim()};
+  try{
+    var ref=db.ref('manutencao/fornecedores'); if(man.edF&&man.edF.id) await ref.child(man.edF.id).set(rec); else await ref.push(rec);
+    man.edF=null; toast('Salvo ✅');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+function manEditForn(id){ var f=man.forn[id]; if(!f) return; man.edF={id:id,nome:f.nome,especialidade:f.especialidade,telefone:f.telefone,obs:f.obs}; manRender(); window.scrollTo(0,0); }
+async function manExcluirForn(id){ if(!confirm('Excluir este cadastro?')) return; try{ await db.ref('manutencao/fornecedores/'+id).remove(); }catch(e){ toast('Erro: '+e.message); } }
+async function manAddAlerta(){
+  var n=document.getElementById('al-nome').value.trim(), t=document.getElementById('al-tel').value.trim();
+  if(!manFone(t)){ toast('Informe um telefone válido'); return; }
+  try{ await db.ref('manutencao/config/alertas').push({nome:n||'Gerência',tel:t}); }catch(e){ toast('Erro: '+e.message); }
+}
+async function manRemAlerta(id){ try{ await db.ref('manutencao/config/alertas/'+id).remove(); }catch(e){ toast('Erro: '+e.message); } }
 async function manPdf(){
   var l=manFiltrados(); if(!l.length){ toast('Nada para o relatório'); return; }
   try{
     var doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'pt',format:'a4'}), W=doc.internal.pageSize.getWidth(), M=24;
     doc.setFillColor(44,62,53); doc.rect(0,0,W,56,'F'); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text('MASHA GROUP · MANUTENÇÃO',M,30);
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text('Relatório de chamados · '+new Date().toLocaleDateString('pt-BR')+' · '+(man.f.un==='atual'?getUnidadeAtual():(man.f.un==='todas'?'Grupo todo':man.f.un))+' · '+l.length+' chamado(s)',M,45);
-    var rows=l.map(function(c){ return [manFmt(c.abertura),c.unidade.replace(' Cravings','').replace(' Country Bar',''),c.setor,c.tipo,(c.local?c.local+' — ':'')+c.descricao,c.prioridade+(c.impacto?' ⛔':''),c.status,c.status==='Resolvido'?'—':manDias(c.abertura)+'d',c.responsavel||'',c.custo?'R$ '+Number(c.custo).toLocaleString('pt-BR',{minimumFractionDigits:2}):'']; });
+    var rows=l.map(function(c){ return [manFmt(c.abertura),c.unidade.replace(' Cravings','').replace(' Country Bar',''),c.setor,c.tipo,(c.local?c.local+' — ':'')+c.descricao,c.prioridade+(c.impacto?' ⛔':''),manSt(c),manFechado(c)?'—':manDias(c.abertura)+'d',c.responsavel||'',c.custo?manBRL(c.custo):'']; });
     doc.autoTable({head:[['Abertura','Unid.','Setor','Tipo','Descrição','Prior.','Status','Aberto há','Responsável','Custo']],body:rows,startY:68,margin:{left:M,right:M},theme:'grid',styles:{fontSize:7.5,cellPadding:3,valign:'middle',lineColor:[220,220,220],lineWidth:0.4},headStyles:{fillColor:[44,62,53],textColor:255},columnStyles:{4:{cellWidth:200}}});
     doc.save('manutencao-'+manHoje()+'.pdf');
   }catch(e){ toast('Erro no PDF: '+e.message); }
+}
+function manRelDados(){
+  var un=getUnidadeAtual(), meses=[], d=new Date(); d.setDate(1);
+  for(var i=0;i<manRel.meses;i++){ meses.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); d.setMonth(d.getMonth()-1); }
+  var itens=manLista().filter(function(c){ return c.custo>0 && (manRel.un==='todas'||c.unidade===un) && meses.indexOf(manCustoDia(c).slice(0,7))>=0; });
+  var m={}, tot={}, tipo={}, uni={}, total=0;
+  meses.forEach(function(k){ m[k]={}; MAN_SETORES.forEach(function(s){ m[k][s]=0; }); });
+  itens.forEach(function(c){ var k=manCustoDia(c).slice(0,7), s=MAN_SETORES.indexOf(c.setor)>=0?c.setor:'Outros', v=Number(c.custo); m[k][s]+=v; tot[s]=(tot[s]||0)+v; tipo[c.tipo]=(tipo[c.tipo]||0)+v; uni[c.unidade]=(uni[c.unidade]||0)+v; total+=v; });
+  return {meses:meses,m:m,tot:tot,tipo:tipo,uni:uni,total:total,itens:itens};
+}
+function manRelRender(){
+  var el=document.getElementById('rel-manut'); if(!el) return;
+  manInit();
+  var perfil=sessionStorage.getItem('perfilAtivo'); if(perfil!=='master'&&perfil!=='gerente'){ el.innerHTML=''; return; }
+  var D=manRelDados(), mx=Math.max.apply(null,[1].concat(MAN_SETORES.map(function(s){return D.tot[s]||0;})));
+  var NM=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  var lbl=function(k){ return NM[Number(k.slice(5))-1]+'/'+k.slice(2,4); };
+  var h='<div class="card" style="margin-top:14px"><div style="font-weight:700;font-size:15px;margin-bottom:8px">🛠️ Custo de manutenção</div>'
+   +'<div style="display:flex;gap:8px;margin-bottom:10px"><select onchange="manRel.meses=Number(this.value);manRelRender()" style="flex:1;padding:9px"><option value="3"'+(manRel.meses===3?' selected':'')+'>Últimos 3 meses</option><option value="6"'+(manRel.meses===6?' selected':'')+'>Últimos 6 meses</option><option value="12"'+(manRel.meses===12?' selected':'')+'>Últimos 12 meses</option></select>'
+   +'<select onchange="manRel.un=this.value;manRelRender()" style="flex:1;padding:9px"><option value="atual"'+(manRel.un==='atual'?' selected':'')+'>'+manEsc(getUnidadeAtual())+'</option><option value="todas"'+(manRel.un==='todas'?' selected':'')+'>Grupo todo</option></select></div>'
+   +'<div style="font-size:24px;font-weight:700">'+manBRL(D.total)+'</div><div style="font-size:12px;color:#888;margin-bottom:10px">'+D.itens.length+' chamado(s) com custo informado · valor lançado no mês da conclusão (ou da abertura, se ainda aberto)</div>';
+  if(!D.itens.length){ h+='<div style="color:#888;font-size:13px">Sem custos lançados no período. Informe o custo ao atualizar o chamado.</div></div>'; el.innerHTML=h; return; }
+  h+='<div class="fl">Por setor</div>'+MAN_SETORES.map(function(s){ var v=D.tot[s]||0; return '<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span>'+s+'</span><b>'+manBRL(v)+'</b></div><div style="height:7px;background:#eee;border-radius:4px"><div style="height:7px;border-radius:4px;background:#8B7355;width:'+Math.round(v/mx*100)+'%"></div></div></div>'; }).join('')
+   +'<div class="fl" style="margin-top:14px">Por mês e setor</div><div style="overflow-x:auto"><table class="mn-tb"><tr><th>Mês</th>'+MAN_SETORES.map(function(s){return '<th>'+s+'</th>';}).join('')+'<th>Total</th></tr>'
+   +D.meses.map(function(k){ var t=0; MAN_SETORES.forEach(function(s){t+=D.m[k][s];}); return '<tr><td><b>'+lbl(k)+'</b></td>'+MAN_SETORES.map(function(s){return '<td>'+(D.m[k][s]?manBRL(D.m[k][s]):'—')+'</td>';}).join('')+'<td><b>'+(t?manBRL(t):'—')+'</b></td></tr>'; }).join('')
+   +'<tr class="mn-tot"><td>Total</td>'+MAN_SETORES.map(function(s){return '<td>'+manBRL(D.tot[s]||0)+'</td>';}).join('')+'<td>'+manBRL(D.total)+'</td></tr></table></div>'
+   +'<div class="fl" style="margin-top:14px">Por tipo de problema</div>'+MAN_TIPOS.filter(function(t){return D.tipo[t[0]];}).map(function(t){ return '<div class="mn-row"><span>'+t[1]+' '+t[0]+'</span><b>'+manBRL(D.tipo[t[0]])+'</b></div>'; }).join('')
+   +'<div class="fl" style="margin-top:14px">Maiores custos</div>'+D.itens.slice().sort(function(a,b){return b.custo-a.custo;}).slice(0,5).map(function(c){ return '<div class="mn-row" style="cursor:pointer" onclick="manAbrirChamado(\''+c.id+'\')"><span>'+manTipoIco(c.tipo)+' '+manEsc(c.local||c.tipo)+' · '+manEsc(c.setor)+'</span><b>'+manBRL(c.custo)+'</b></div>'; }).join('')
+   +'<button class="btn-sec" style="margin-top:12px" onclick="manRelExcel()">📊 Baixar Excel</button></div>';
+  el.innerHTML=h;
+}
+function manAbrirChamado(id){ man.view='det'; man.sel=id; man.detFotos=null; goTo('s-manut'); manDet(id); }
+function manRelExcel(){
+  if(!window.XLSX){ toast('Excel indisponível'); return; }
+  var D=manRelDados(), rows=[['CUSTO DE MANUTENÇÃO — '+(manRel.un==='todas'?'Grupo todo':getUnidadeAtual())],[],['Mês'].concat(MAN_SETORES,['Total'])];
+  D.meses.forEach(function(k){ var t=0; MAN_SETORES.forEach(function(s){t+=D.m[k][s];}); rows.push([k].concat(MAN_SETORES.map(function(s){return +D.m[k][s].toFixed(2);}),[+t.toFixed(2)])); });
+  rows.push(['Total'].concat(MAN_SETORES.map(function(s){return +(D.tot[s]||0).toFixed(2);}),[+D.total.toFixed(2)]));
+  rows.push([],['Chamados com custo'],['Data','Unidade','Setor','Tipo','Local','Descrição','Status','Responsável','Custo']);
+  D.itens.sort(function(a,b){return manCustoDia(a).localeCompare(manCustoDia(b));}).forEach(function(c){ rows.push([manCustoDia(c),c.unidade,c.setor,c.tipo,c.local||'',c.descricao,manSt(c),c.responsavel||'',+Number(c.custo).toFixed(2)]); });
+  var ws=XLSX.utils.aoa_to_sheet(rows), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Manutenção'); XLSX.writeFile(wb,'custo-manutencao-'+manHoje()+'.xlsx');
 }
 (function(){
   var _go=goTo;
@@ -4901,6 +5036,10 @@ async function manPdf(){
       manRender();
     }
   };
+  if(typeof renderRelatoriosScreen==='function'){
+    var _rr=renderRelatoriosScreen;
+    renderRelatoriosScreen=function(){ var r=_rr.apply(this,arguments); try{ manRelRender(); }catch(e){ console.warn(e); } return r; };
+  }
   try{ SIDE_MASTER.splice(1,0,['s-manut','🛠️','Manutenção']); SIDE_GERENTE.splice(1,0,['s-manut','🛠️','Manutenção']); }catch(e){}
 })();
 </script>
