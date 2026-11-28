@@ -256,6 +256,27 @@ body.desk.no-side #toast{left:50%}
 .fd-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
 body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
 .fd-det textarea{width:100%;box-sizing:border-box;border:.5px solid var(--bdr2);border-radius:var(--rs);padding:10px;font:inherit;font-size:14px;background:#fff;resize:vertical}
+.mn-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mn-st{background:var(--surf);border:.5px solid var(--bdr);border-radius:var(--r);padding:12px;text-align:center}
+.mn-st b{display:block;font-size:24px;line-height:1.1}.mn-st span{font-size:11px;color:var(--tx2)}
+.mn-filtros{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mn-filtros select{padding:10px;font-size:13px}
+.mn-card{display:flex;gap:12px;cursor:pointer;align-items:flex-start}
+.mn-th{width:64px;height:64px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--surf2)}
+.mn-th0{display:flex;align-items:center;justify-content:center;font-size:28px}
+.mn-bd{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:12px;white-space:nowrap}
+.mn-chips{display:flex;flex-wrap:wrap;gap:8px}
+.mn-chip{padding:11px 14px;border-radius:12px;border:1.5px solid var(--bdr2);background:var(--surf);font-size:14px;font-family:inherit;cursor:pointer;color:var(--tx)}
+.mn-chip.on{background:var(--hd);border-color:var(--hd);color:#fff;font-weight:600}
+.mn-chk{display:flex;gap:10px;align-items:center;font-size:14px;background:#fcebeb;color:#a32d2d;border-radius:var(--rs);padding:12px}
+.mn-chk input{width:20px;height:20px}
+.mn-fotos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.mn-f{position:relative}.mn-f img{width:92px;height:92px;object-fit:cover;border-radius:10px;cursor:pointer}
+.mn-f button{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:12px;cursor:pointer}
+.mn-row{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:6px 0;border-bottom:.5px solid var(--bdr)}
+.mn-row span{color:var(--tx2)}.mn-row b{text-align:right;font-weight:600}
+.mn-warn{margin-top:10px;background:var(--am-l);color:var(--am);border-radius:var(--rs);padding:10px;font-size:13px}
+.mn-h{font-size:13px;padding:6px 0;border-bottom:.5px solid var(--bdr)}.mn-h div{font-size:11px;color:var(--tx3)}
 </style>
 </head>
 <body>
@@ -306,7 +327,11 @@ body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
       <div class="p-ico">🏪</div>
       <div><div class="p-lb">Gerência da unidade</div><div class="p-sub">Acesso restrito à unidade escolhida</div></div>
     </div>
-    <button class="back-link" onclick="goTo('s-unidade')">‹ Trocar unidade</button>
+    <div class="profile-card" onclick="manAbrir()">
+<div class="p-ico">🛠️</div>
+<div><div class="p-lb">Manutenção</div><div class="p-sub">Abrir e acompanhar chamados de manutenção</div></div>
+</div>
+<button class="back-link" onclick="goTo('s-unidade')">‹ Trocar unidade</button>
   </div>
 </div>
 
@@ -360,11 +385,21 @@ body.desk .fd-grid{grid-template-columns:repeat(4,1fr)}
     <div class="htxt"><h1>Masha Group</h1><p>Gestão</p></div>
     <div class="hdr-right">
       <span class="unit-badge" id="home-unidade-badge"></span>
-      <button class="sair-link" onclick="sair()">Sair</button>
+      <button class="sair-link" onclick="manAbrir()">🛠️ Manutenção</button>
+<button class="sair-link" onclick="sair()">Sair</button>
     </div>
   </div>
   <div class="home-tabs" id="home-tabs"></div>
   <div class="body" id="home-body"></div>
+</div>
+
+<div class="screen" id="s-manut">
+<div class="hdr">
+<button class="back" onclick="manVoltar()">‹</button>
+<div class="htxt"><h1>Manutenção</h1><p>Chamados do grupo</p></div>
+<div class="hdr-right"><span class="unit-badge" id="man-badge"></span></div>
+</div>
+<div class="body" id="man-body"></div>
 </div>
 
 <!-- 6. CUSTOS (master only) -->
@@ -4627,6 +4662,246 @@ async function lvPdf(){
     }catch(e){}
     return r;
   };
+})();
+</script>
+<script>
+var MAN_TIPOS=[['Elétrico','⚡'],['Água','🚰'],['Esgoto','🚽'],['Equipamento','⚙️'],['Outro','🔧']];
+var MAN_SETORES=['Cozinha','Salão','Bar','Outros'];
+var MAN_PRIO=['Baixa','Média','Alta','Urgente'];
+var MAN_STATUS=['Aberto','Em andamento','Aguardando peça/orçamento','Resolvido'];
+var MAN_COR={'Aberto':['#a32d2d','#fcebeb'],'Em andamento':['#b5720b','#faeeda'],'Aguardando peça/orçamento':['#185fa5','#e6f1fb'],'Resolvido':['#1d9e75','#e1f5ee']};
+var MAN_PCOR={'Baixa':'#999993','Média':'#185fa5','Alta':'#b5720b','Urgente':'#a32d2d'};
+var man={view:'lista',all:{},f:{un:'atual',st:'abertos',tipo:'',setor:''},sel:null,novo:null,fotos:[],on:false,detFotos:null};
+function manEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function manRef(){ return db.ref('manutencao/chamados'); }
+function manHoje(){ return formatDateLocal(new Date()); }
+function manFmt(d){ return d ? d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4) : '—'; }
+function manDias(d){ if(!d) return 0; var a=new Date(d+'T12:00:00'), b=new Date(manHoje()+'T12:00:00'); return Math.max(0,Math.round((b-a)/86400000)); }
+function manGestor(){ var p=sessionStorage.getItem('perfilAtivo'); return p==='master'||p==='gerente'||sessionStorage.getItem('manGestor')==='1'; }
+function manNomeGestor(){ return sessionStorage.getItem('gerenteNome') || (sessionStorage.getItem('perfilAtivo')==='master'?'Master':'Gerência'); }
+function manPin(cb){
+  if(manGestor()){ cb(); return; }
+  var s=prompt('Senha da gerência:'); if(s===null) return;
+  if(s.trim()==='000813'){ sessionStorage.setItem('manGestor','1'); cb(); } else toast('Senha incorreta');
+}
+function manAbrir(){ man.view='lista'; goTo('s-manut'); }
+function manVoltar(){
+  if(man.view!=='lista'){ man.view='lista'; man.sel=null; manRender(); return; }
+  var p=sessionStorage.getItem('perfilAtivo'); goTo(p==='master'||p==='gerente' ? 's-home' : 's-perfil');
+}
+function manLista(){
+  return Object.keys(man.all).map(function(k){ var c=man.all[k]; c.id=k; return c; });
+}
+function manRender(){
+  var un=getUnidadeAtual(); var b=document.getElementById('man-badge'); if(b) b.textContent=un;
+  if(!man.on){
+    man.on=true;
+    try{ manRef().on('value',function(s){ man.all=s.val()||{}; var sc=document.getElementById('s-manut'); if(sc&&sc.classList.contains('active')) manRender(); }); }catch(e){ console.warn(e); }
+  }
+  var el=document.getElementById('man-body'); if(!el) return;
+  if(man.view==='novo') return manRenderForm(el);
+  if(man.view==='det') return manRenderDet(el);
+  manRenderLista(el);
+}
+function manFiltrados(){
+  var un=getUnidadeAtual(), f=man.f;
+  return manLista().filter(function(c){
+    if(f.un==='atual' && c.unidade!==un) return false;
+    if(f.un==='Cali Cravings' && c.unidade!=='Cali Cravings') return false;
+    if(f.un==='Texas Country Bar' && c.unidade!=='Texas Country Bar') return false;
+    if(f.st==='abertos' && c.status==='Resolvido') return false;
+    if(f.st==='resolvidos' && c.status!=='Resolvido') return false;
+    if(f.tipo && c.tipo!==f.tipo) return false;
+    if(f.setor && c.setor!==f.setor) return false;
+    return true;
+  }).sort(function(a,b){
+    var ra=a.status==='Resolvido'?1:0, rb=b.status==='Resolvido'?1:0; if(ra!==rb) return ra-rb;
+    var pa=MAN_PRIO.indexOf(b.prioridade)-MAN_PRIO.indexOf(a.prioridade); if(pa) return pa;
+    return (a.criadoTs||0)-(b.criadoTs||0);
+  });
+}
+function manSet(k,v){ man.f[k]=v; manRender(); }
+function manTipoIco(t){ var x=MAN_TIPOS.filter(function(y){return y[0]===t;})[0]; return x?x[1]:'🔧'; }
+function manRenderLista(el){
+  var un=getUnidadeAtual(), todas=manLista();
+  var base=todas.filter(function(c){ return man.f.un==='atual'?c.unidade===un:(man.f.un==='todas'?true:c.unidade===man.f.un); });
+  var abertos=base.filter(function(c){return c.status==='Aberto';}).length;
+  var and=base.filter(function(c){return c.status==='Em andamento'||c.status==='Aguardando peça/orçamento';}).length;
+  var urg=base.filter(function(c){return c.status!=='Resolvido'&&(c.prioridade==='Urgente'||c.impacto);}).length;
+  var mes=manHoje().slice(0,7), res=base.filter(function(c){return c.status==='Resolvido'&&(c.resolvidoDia||'').slice(0,7)===mes;}).length;
+  var lista=manFiltrados();
+  var opt=function(v,l,cur){ return '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+l+'</option>'; };
+  var h='<button class="btn-or" onclick="manNovo()">＋ Abrir chamado de manutenção</button>'
+   +'<div class="mn-stats"><div class="mn-st"><b style="color:#a32d2d">'+abertos+'</b><span>Abertos</span></div><div class="mn-st"><b style="color:#b5720b">'+and+'</b><span>Em andamento</span></div><div class="mn-st"><b style="color:#a32d2d">'+urg+'</b><span>Urgentes / param operação</span></div><div class="mn-st"><b style="color:#1d9e75">'+res+'</b><span>Resolvidos no mês</span></div></div>'
+   +'<div class="mn-filtros"><select onchange="manSet(\'un\',this.value)">'+opt('atual',un,man.f.un)+opt('Cali Cravings','Cali Cravings',man.f.un)+opt('Texas Country Bar','Texas Country Bar',man.f.un)+opt('todas','Grupo todo',man.f.un)+'</select>'
+   +'<select onchange="manSet(\'st\',this.value)">'+opt('abertos','Não resolvidos',man.f.st)+opt('todos','Todos',man.f.st)+opt('resolvidos','Resolvidos',man.f.st)+'</select>'
+   +'<select onchange="manSet(\'tipo\',this.value)">'+opt('','Todos os tipos',man.f.tipo)+MAN_TIPOS.map(function(t){return opt(t[0],t[1]+' '+t[0],man.f.tipo);}).join('')+'</select>'
+   +'<select onchange="manSet(\'setor\',this.value)">'+opt('','Todos os setores',man.f.setor)+MAN_SETORES.map(function(s){return opt(s,s,man.f.setor);}).join('')+'</select></div>'
+   +'<div style="display:flex;gap:8px"><button class="btn-sec" style="flex:1" onclick="manPdf()">📄 Relatório PDF</button></div>';
+  if(!lista.length) h+='<div class="card" style="text-align:center;color:#888;padding:26px">Nenhum chamado com esses filtros. 🎉</div>';
+  lista.forEach(function(c){
+    var cor=MAN_COR[c.status]||MAN_COR['Aberto'], dias=manDias(c.abertura), desde=manDias(c.desde);
+    h+='<div class="card mn-card" onclick="manDet(\''+c.id+'\')">'
+     +(c.thumb?'<img class="mn-th" src="'+c.thumb+'">':'<div class="mn-th mn-th0">'+manTipoIco(c.tipo)+'</div>')
+     +'<div style="flex:1;min-width:0"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span class="mn-bd" style="background:'+cor[1]+';color:'+cor[0]+'">'+manEsc(c.status)+'</span><span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade||'Média')+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
+     +'<div style="font-weight:700;font-size:14px">'+manTipoIco(c.tipo)+' '+manEsc(c.tipo)+' · '+manEsc(c.setor)+(c.local?' · '+manEsc(c.local):'')+'</div>'
+     +'<div style="font-size:12.5px;color:#555;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'+manEsc(c.descricao)+'</div>'
+     +'<div style="font-size:11.5px;color:#888;margin-top:5px">'+manEsc(c.unidade)+' · '+manEsc(c.solicitante)+' · aberto em '+manFmt(c.abertura)+(c.status!=='Resolvido'?' ('+dias+'d)':'')+(c.desde&&c.status!=='Resolvido'&&desde>dias?' · problema há '+desde+'d':'')+'</div></div></div>';
+  });
+  el.innerHTML=h;
+}
+function manNovo(){
+  var nome=''; try{ nome=localStorage.getItem('manSolicitante')||''; }catch(e){}
+  man.novo={unidade:getUnidadeAtual(),solicitante:nome,abertura:manHoje(),desde:manHoje(),tipo:'',setor:'',local:'',descricao:'',prioridade:'Média',impacto:false};
+  man.fotos=[]; man.view='novo'; manRender();
+}
+function manN(k,v){ man.novo[k]=v; }
+function manEscolha(k,v){ man.novo[k]=v; manRenderForm(document.getElementById('man-body')); }
+function manRenderForm(el){
+  var n=man.novo;
+  var chips=function(k,arr,ico){ return '<div class="mn-chips">'+arr.map(function(x){ var v=Array.isArray(x)?x[0]:x, i=Array.isArray(x)?x[1]+' ':''; return '<button type="button" class="mn-chip'+(n[k]===v?' on':'')+'" onclick="manEscolha(\''+k+'\',\''+v+'\')">'+i+v+'</button>'; }).join('')+'</div>'; };
+  el.innerHTML='<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:10px">Novo chamado de manutenção</div>'
+   +'<div class="field"><label class="fl">Unidade</label><select onchange="manN(\'unidade\',this.value)"><option'+(n.unidade==='Cali Cravings'?' selected':'')+'>Cali Cravings</option><option'+(n.unidade==='Texas Country Bar'?' selected':'')+'>Texas Country Bar</option></select></div>'
+   +'<div class="field"><label class="fl">Nome do solicitante *</label><input type="text" value="'+manEsc(n.solicitante)+'" placeholder="Quem está abrindo o chamado" oninput="manN(\'solicitante\',this.value)"></div>'
+   +'<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label class="fl">Data de abertura</label><input type="date" value="'+n.abertura+'" onchange="manN(\'abertura\',this.value)"></div><div class="field" style="flex:1"><label class="fl">Problema existe desde</label><input type="date" value="'+n.desde+'" onchange="manN(\'desde\',this.value)"></div></div>'
+   +'<div class="field"><label class="fl">Tipo do problema *</label>'+chips('tipo',MAN_TIPOS)+'</div>'
+   +'<div class="field"><label class="fl">Setor *</label>'+chips('setor',MAN_SETORES)+'</div>'
+   +'<div class="field"><label class="fl">Local / equipamento</label><input type="text" value="'+manEsc(n.local)+'" placeholder="Ex.: câmara fria 2, pia do bar, banheiro feminino" oninput="manN(\'local\',this.value)"></div>'
+   +'<div class="field"><label class="fl">O que está acontecendo? *</label><textarea rows="4" placeholder="Descreva o problema" oninput="manN(\'descricao\',this.value)">'+manEsc(n.descricao)+'</textarea></div>'
+   +'<div class="field"><label class="fl">Prioridade</label>'+chips('prioridade',MAN_PRIO)+'</div>'
+   +'<label class="mn-chk"><input type="checkbox" '+(n.impacto?'checked':'')+' onchange="manN(\'impacto\',this.checked)"> ⛔ Está parando ou atrapalhando a operação</label>'
+   +'<div class="field"><label class="fl">Fotos (até 5)</label><label class="btn-sec" style="display:block;text-align:center;cursor:pointer">📷 Tirar / escolher fotos<input type="file" accept="image/*" multiple style="display:none" onchange="manFoto(this)"></label><div id="man-fotos" class="mn-fotos"></div></div>'
+   +'<button class="btn-or" id="man-env" onclick="manEnviar()">Enviar chamado</button><button class="btn-sec" style="margin-top:8px" onclick="manVoltar()">Cancelar</button></div>';
+  manRenderFotos();
+}
+function manRenderFotos(){
+  var el=document.getElementById('man-fotos'); if(!el) return;
+  el.innerHTML=man.fotos.map(function(f,i){ return '<div class="mn-f"><img src="'+f+'"><button onclick="manRemFoto('+i+')">✕</button></div>'; }).join('');
+}
+function manRemFoto(i){ man.fotos.splice(i,1); manRenderFotos(); }
+function manComprimir(file,max,q){
+  return new Promise(function(res){
+    var fr=new FileReader();
+    fr.onload=function(){ var im=new Image(); im.onload=function(){
+      var w=im.width,h=im.height,s=Math.min(1,max/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      var c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(im,0,0,w,h);
+      res(c.toDataURL('image/jpeg',q)); }; im.onerror=function(){ res(null); }; im.src=fr.result; };
+    fr.onerror=function(){ res(null); }; fr.readAsDataURL(file);
+  });
+}
+async function manFoto(inp){
+  var fs=[].slice.call(inp.files||[]);
+  for(var i=0;i<fs.length;i++){
+    if(man.fotos.length>=5){ toast('Máximo de 5 fotos'); break; }
+    var d=await manComprimir(fs[i],1000,0.7); if(d) man.fotos.push(d);
+  }
+  inp.value=''; manRenderFotos();
+}
+async function manEnviar(){
+  var n=man.novo;
+  if(!(n.solicitante||'').trim()){ toast('Informe o nome do solicitante'); return; }
+  if(!n.tipo){ toast('Escolha o tipo do problema'); return; }
+  if(!n.setor){ toast('Escolha o setor'); return; }
+  if(!(n.descricao||'').trim()){ toast('Descreva o problema'); return; }
+  var b=document.getElementById('man-env'); if(b){ b.disabled=true; b.textContent='Enviando…'; }
+  try{
+    try{ localStorage.setItem('manSolicitante',n.solicitante.trim()); }catch(e){}
+    var id=manRef().push().key, thumb=null;
+    if(man.fotos.length){ try{ var r=await fetch(man.fotos[0]); thumb=await manComprimir(await r.blob(),150,0.6); }catch(e){} }
+    var rec={unidade:n.unidade,solicitante:n.solicitante.trim(),abertura:n.abertura||manHoje(),desde:n.desde||n.abertura||manHoje(),tipo:n.tipo,setor:n.setor,local:(n.local||'').trim(),descricao:n.descricao.trim(),prioridade:n.prioridade,impacto:!!n.impacto,status:'Aberto',nFotos:man.fotos.length,criadoTs:Date.now()};
+    if(thumb) rec.thumb=thumb;
+    if(man.fotos.length) await db.ref('manutencao/fotos/'+id).set(man.fotos);
+    await manRef().child(id).set(rec);
+    await manRef().child(id).child('historico').push({ts:Date.now(),por:n.solicitante.trim(),acao:'Chamado aberto'});
+    toast('Chamado enviado ✅'); man.view='lista'; man.novo=null; man.fotos=[]; manRender();
+  }catch(e){ toast('Erro ao enviar: '+e.message); if(b){ b.disabled=false; b.textContent='Enviar chamado'; } }
+}
+async function manDet(id){
+  man.sel=id; man.view='det'; man.detFotos=null; manRender();
+  try{ var s=await db.ref('manutencao/fotos/'+id).once('value'); var v=s.val()||[]; if(!Array.isArray(v)) v=Object.values(v); man.detFotos=v; }catch(e){ man.detFotos=[]; }
+  if(man.view==='det'&&man.sel===id) manRender();
+}
+function manRenderDet(el){
+  var c=man.all[man.sel]; if(!c){ el.innerHTML='<div class="card">Chamado não encontrado.</div><button class="btn-sec" onclick="manVoltar()">‹ Voltar</button>'; return; }
+  var cor=MAN_COR[c.status]||MAN_COR['Aberto'], g=manGestor();
+  var hist=c.historico?Object.values(c.historico).sort(function(a,b){return a.ts-b.ts;}):[];
+  var row=function(l,v){ return v?'<div class="mn-row"><span>'+l+'</span><b>'+v+'</b></div>':''; };
+  var h='<button class="btn-sec" onclick="manVoltar()">‹ Voltar à lista</button>'
+   +'<div class="card"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span class="mn-bd" style="background:'+cor[1]+';color:'+cor[0]+'">'+manEsc(c.status)+'</span><span class="mn-bd" style="background:#f0f0f0;color:'+(MAN_PCOR[c.prioridade]||'#555')+'">'+manEsc(c.prioridade)+'</span>'+(c.impacto?'<span class="mn-bd" style="background:#fcebeb;color:#a32d2d">⛔ para a operação</span>':'')+'</div>'
+   +'<div style="font-weight:700;font-size:16px;margin-bottom:6px">'+manTipoIco(c.tipo)+' '+manEsc(c.tipo)+' · '+manEsc(c.setor)+'</div>'
+   +'<div style="font-size:14px;margin-bottom:10px;white-space:pre-wrap">'+manEsc(c.descricao)+'</div>'
+   +row('Unidade',manEsc(c.unidade))+row('Local / equipamento',manEsc(c.local))+row('Solicitante',manEsc(c.solicitante))+row('Aberto em',manFmt(c.abertura)+(c.status!=='Resolvido'?' ('+manDias(c.abertura)+' dias)':''))+row('Problema desde',manFmt(c.desde))
+   +row('Responsável',manEsc(c.responsavel))+row('Previsão',c.previsao?manFmt(c.previsao):'')+row('Custo',c.custo?'R$ '+Number(c.custo).toLocaleString('pt-BR',{minimumFractionDigits:2}):'')+row('Resolvido em',c.resolvidoDia?manFmt(c.resolvidoDia):'');
+  var rec=manLista().filter(function(x){ return x.id!==c.id && x.unidade===c.unidade && x.tipo===c.tipo && (x.local||'').trim() && (x.local||'').trim().toLowerCase()===(c.local||'').trim().toLowerCase() && (c.criadoTs-(x.criadoTs||0))<90*86400000 && (x.criadoTs||0)<c.criadoTs; }).length;
+  if(rec) h+='<div class="mn-warn">🔁 Reincidente: mesmo local/tipo teve '+rec+' chamado(s) nos últimos 90 dias.</div>';
+  h+='</div>';
+  if(c.nFotos){
+    h+='<div class="card"><div class="fl">Fotos ('+c.nFotos+')</div>'+(man.detFotos===null?'<div style="color:#888;font-size:13px">Carregando fotos…</div>':'<div class="mn-fotos">'+man.detFotos.map(function(f){return '<div class="mn-f"><img src="'+f+'" onclick="manVerFoto(this.src)"></div>';}).join('')+'</div>')+'</div>';
+  }
+  if(hist.length) h+='<div class="card"><div class="fl">Histórico</div>'+hist.map(function(x){ var d=new Date(x.ts); return '<div class="mn-h"><b>'+manEsc(x.acao)+'</b>'+(x.obs?' — '+manEsc(x.obs):'')+'<div>'+d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' · '+manEsc(x.por)+'</div></div>'; }).join('')+'</div>';
+  if(g){
+    h+='<div class="card"><div class="fl">Atualizar (gerência)</div>'
+     +'<div class="field"><label class="fl">Status</label><select id="mg-st">'+MAN_STATUS.map(function(s){return '<option'+(c.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
+     +'<div class="field"><label class="fl">Responsável / fornecedor</label><input type="text" id="mg-resp" value="'+manEsc(c.responsavel||'')+'"></div>'
+     +'<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label class="fl">Previsão</label><input type="date" id="mg-prev" value="'+(c.previsao||'')+'"></div><div class="field" style="flex:1"><label class="fl">Custo (R$)</label><input type="text" inputmode="decimal" id="mg-custo" value="'+(c.custo?String(c.custo).replace('.',','):'')+'"></div></div>'
+     +'<div class="field"><label class="fl">Observação</label><textarea id="mg-obs" rows="2" placeholder="O que foi feito / combinado"></textarea></div>'
+     +'<button class="btn-or" onclick="manSalvarGestao()">Salvar atualização</button>'
+     +'<button class="btn-sec" style="margin-top:8px;color:#a32d2d;border-color:#a32d2d" onclick="manExcluir()">Excluir chamado</button></div>';
+  } else {
+    h+='<button class="btn-sec" onclick="manPin(function(){manRender();})">🔒 Atualizar status (gerência)</button>';
+  }
+  h+='<button class="btn-sec" onclick="manZap()">📲 Compartilhar no WhatsApp</button>';
+  el.innerHTML=h;
+}
+function manVerFoto(src){
+  var d=document.createElement('div'); d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;padding:10px';
+  d.onclick=function(){ d.remove(); }; var i=document.createElement('img'); i.src=src; i.style.cssText='max-width:100%;max-height:100%;border-radius:8px'; d.appendChild(i); document.body.appendChild(d);
+}
+async function manSalvarGestao(){
+  var c=man.all[man.sel]; if(!c) return;
+  var st=document.getElementById('mg-st').value, resp=document.getElementById('mg-resp').value.trim(), prev=document.getElementById('mg-prev').value, custo=cotNumSafe(document.getElementById('mg-custo').value), obs=document.getElementById('mg-obs').value.trim();
+  var up={status:st,responsavel:resp,previsao:prev||null,custo:custo||null};
+  up.resolvidoDia = st==='Resolvido' ? (c.resolvidoDia||manHoje()) : null;
+  var acoes=[]; if(st!==c.status) acoes.push('Status: '+c.status+' → '+st); if(resp!==(c.responsavel||'')) acoes.push('Responsável: '+(resp||'—')); if((prev||'')!==(c.previsao||'')) acoes.push('Previsão: '+(prev?manFmt(prev):'—')); if((custo||0)!==(Number(c.custo)||0)) acoes.push('Custo: R$ '+(custo||0));
+  try{
+    await manRef().child(man.sel).update(up);
+    if(acoes.length||obs) await manRef().child(man.sel).child('historico').push({ts:Date.now(),por:manNomeGestor(),acao:acoes.join(' · ')||'Observação',obs:obs||null});
+    toast('Atualizado ✅');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+function cotNumSafe(s){ s=String(s||'').trim(); if(!s) return 0; var n=/,/.test(s)?parseFloat(s.replace(/\./g,'').replace(',','.')):parseFloat(s); return isNaN(n)?0:n; }
+async function manExcluir(){
+  if(!confirm('Excluir este chamado definitivamente? Não dá para desfazer.')) return;
+  try{ await db.ref('manutencao/fotos/'+man.sel).remove(); await manRef().child(man.sel).remove(); toast('Chamado excluído'); man.view='lista'; man.sel=null; manRender(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+function manZap(){
+  var c=man.all[man.sel]; if(!c) return;
+  var t='🛠️ *Chamado de manutenção* — '+c.unidade+'\n'+manTipoIco(c.tipo)+' '+c.tipo+' · '+c.setor+(c.local?' · '+c.local:'')+'\n'+c.descricao+'\n\nPrioridade: '+c.prioridade+(c.impacto?' (⛔ para a operação)':'')+'\nStatus: '+c.status+'\nAberto em '+manFmt(c.abertura)+' por '+c.solicitante+(c.desde?'\nProblema desde '+manFmt(c.desde):'');
+  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');
+}
+async function manPdf(){
+  var l=manFiltrados(); if(!l.length){ toast('Nada para o relatório'); return; }
+  try{
+    var doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'pt',format:'a4'}), W=doc.internal.pageSize.getWidth(), M=24;
+    doc.setFillColor(44,62,53); doc.rect(0,0,W,56,'F'); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text('MASHA GROUP · MANUTENÇÃO',M,30);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text('Relatório de chamados · '+new Date().toLocaleDateString('pt-BR')+' · '+(man.f.un==='atual'?getUnidadeAtual():(man.f.un==='todas'?'Grupo todo':man.f.un))+' · '+l.length+' chamado(s)',M,45);
+    var rows=l.map(function(c){ return [manFmt(c.abertura),c.unidade.replace(' Cravings','').replace(' Country Bar',''),c.setor,c.tipo,(c.local?c.local+' — ':'')+c.descricao,c.prioridade+(c.impacto?' ⛔':''),c.status,c.status==='Resolvido'?'—':manDias(c.abertura)+'d',c.responsavel||'',c.custo?'R$ '+Number(c.custo).toLocaleString('pt-BR',{minimumFractionDigits:2}):'']; });
+    doc.autoTable({head:[['Abertura','Unid.','Setor','Tipo','Descrição','Prior.','Status','Aberto há','Responsável','Custo']],body:rows,startY:68,margin:{left:M,right:M},theme:'grid',styles:{fontSize:7.5,cellPadding:3,valign:'middle',lineColor:[220,220,220],lineWidth:0.4},headStyles:{fillColor:[44,62,53],textColor:255},columnStyles:{4:{cellWidth:200}}});
+    doc.save('manutencao-'+manHoje()+'.pdf');
+  }catch(e){ toast('Erro no PDF: '+e.message); }
+}
+(function(){
+  var _go=goTo;
+  goTo=function(id){
+    _go.apply(this,arguments);
+    if(id==='s-manut'){
+      var p=sessionStorage.getItem('perfilAtivo');
+      document.body.classList.toggle('no-side', !(p==='master'||p==='gerente'));
+      manRender();
+    }
+  };
+  try{ SIDE_MASTER.splice(1,0,['s-manut','🛠️','Manutenção']); SIDE_GERENTE.splice(1,0,['s-manut','🛠️','Manutenção']); }catch(e){}
 })();
 </script>
 </body>
